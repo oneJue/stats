@@ -54,7 +54,19 @@ class ApplicationSettings: NSStackView {
         get { Store.shared.bool(key: "keep_menubar_positions", defaultValue: false) }
         set { Store.shared.set(key: "keep_menubar_positions", value: newValue) }
     }
-    
+
+    // Personal add-on: power-management toggles (合盖不休眠 / 保持亮屏).
+    // Persisted via the shared Store; the actual effect lives in the `pmset -a`
+    // profile (which survives app quit/restart independently of the app).
+    private var lidNoSleepState: Bool {
+        get { Store.shared.bool(key: "lid_no_sleep_state", defaultValue: false) }
+        set { Store.shared.set(key: "lid_no_sleep_state", value: newValue) }
+    }
+    private var keepScreenAwakeState: Bool {
+        get { Store.shared.bool(key: "keep_screen_awake_state", defaultValue: false) }
+        set { Store.shared.set(key: "keep_screen_awake_state", value: newValue) }
+    }
+
     private var updateSelector: NSPopUpButton?
     private var startAtLoginBtn: NSSwitch?
     private var remoteControlBtn: NSSwitch?
@@ -63,6 +75,7 @@ class ApplicationSettings: NSStackView {
     private var combinedModulesView: PreferencesSection?
     private var fanHelperView: PreferencesSection?
     private var remoteView: PreferencesSection?
+    private var powerView: PreferencesSection?
     
     private var updateWindow: UpdateWindow?
     private let moduleSelector: ModuleSelectorView = ModuleSelectorView()
@@ -123,7 +136,19 @@ class ApplicationSettings: NSStackView {
                 state: self.systemWidgetsUpdatesState
             ))
         ]))
-        
+
+        self.powerView = PreferencesSection(title: localizedString("Power"), [
+            PreferencesRow(localizedString("Prevent sleep on lid close"), component: switchView(
+                action: #selector(self.toggleLidNoSleep),
+                state: self.lidNoSleepState
+            )),
+            PreferencesRow(localizedString("Keep screen awake"), component: switchView(
+                action: #selector(self.toggleKeepScreenAwake),
+                state: self.keepScreenAwakeState
+            ))
+        ])
+        scrollView.stackView.addArrangedSubview(self.powerView!)
+
         self.combinedModulesView = PreferencesSection([
             PreferencesRow(localizedString("Combined modules"), component: switchView(
                 action: #selector(self.toggleCombinedModules),
@@ -391,7 +416,26 @@ class ApplicationSettings: NSStackView {
     @objc private func toggleMenuBarPosition(_ sender: NSButton) {
         self.keepMenuBarPosition = sender.state == NSControl.StateValue.on
     }
-    
+
+    // MARK: - Personal power toggles (合盖不休眠 / 保持亮屏)
+    // Backed by IOKit power assertions via PowerTweaks — no admin password.
+    @objc private func toggleLidNoSleep(_ sender: NSButton) {
+        let on = sender.state == NSControl.StateValue.on
+        if PowerTweaks.shared.setLidNoSleep(on) {
+            self.lidNoSleepState = on
+        } else {
+            sender.state = self.lidNoSleepState ? .on : .off
+        }
+    }
+    @objc private func toggleKeepScreenAwake(_ sender: NSButton) {
+        let on = sender.state == NSControl.StateValue.on
+        if PowerTweaks.shared.setKeepScreenAwake(on) {
+            self.keepScreenAwakeState = on
+        } else {
+            sender.state = self.keepScreenAwakeState ? .on : .off
+        }
+    }
+
     @objc private func importSettings() {
         let panel = NSOpenPanel()
         panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.modalPanelWindow)))

@@ -2383,6 +2383,62 @@ public class SeparatorView: NSStackView {
     }
 }
 
+// MARK: - PowerTweaks (IOKit power assertions, no admin password)
+// Lid-no-sleep via PreventSystemSleep assertion; keep-awake via
+// PreventUserIdleDisplaySleep (NOT PreventDisplaySleep — that one silently fails
+// to hold a live assertion for user apps). Uses the same `import IOKit.pwr_mgt`
+// as UserContext.isDisplaySleepPrevented below — no dlopen needed here. Public so
+// module frameworks (e.g. Battery popup) can call PowerTweaks.shared.* directly.
+public final class PowerTweaks {
+    public static let shared = PowerTweaks()
+    private var lidAssertion: UInt32 = 0
+    private var awakeAssertion: UInt32 = 0
+    private init() {}
+
+    @discardableResult
+    public func setLidNoSleep(_ on: Bool) -> Bool {
+        if on {
+            guard self.lidAssertion == 0 else { return true }
+            var id: UInt32 = 0
+            let r = IOPMAssertionCreateWithName(
+                "PreventSystemSleep" as CFString,        // kIOPMAssertionTypePreventSystemSleep
+                255,                                      // kIOPMAssertionLevelOn
+                "Stats — lid no sleep" as CFString,
+                &id)
+            guard r == kIOReturnSuccess else { NSLog("PowerTweaks: lid assertion -> %d", r); return false }
+            self.lidAssertion = id
+            return true
+        }
+        if self.lidAssertion != 0 { _ = IOPMAssertionRelease(self.lidAssertion); self.lidAssertion = 0 }
+        return true
+    }
+
+    @discardableResult
+    public func setKeepScreenAwake(_ on: Bool) -> Bool {
+        if on {
+            guard self.awakeAssertion == 0 else { return true }
+            var id: UInt32 = 0
+            let r = IOPMAssertionCreateWithName(
+                "PreventUserIdleDisplaySleep" as CFString,  // kIOPMAssertionTypePreventUserIdleDisplaySleep
+                255,                                          // kIOPMAssertionLevelOn
+                "Stats — keep display awake" as CFString,
+                &id)
+            guard r == kIOReturnSuccess else { NSLog("PowerTweaks: display assertion -> %d", r); return false }
+            self.awakeAssertion = id
+            return true
+        }
+        if self.awakeAssertion != 0 { _ = IOPMAssertionRelease(self.awakeAssertion); self.awakeAssertion = 0 }
+        return true
+    }
+
+    /// Re-assert toggles persisted in Store (call on app launch — assertions are
+    /// process-held and don't survive restart).
+    public func restoreFromStore() {
+        if Store.shared.bool(key: "lid_no_sleep_state", defaultValue: false) { _ = self.setLidNoSleep(true) }
+        if Store.shared.bool(key: "keep_screen_awake_state", defaultValue: false) { _ = self.setKeepScreenAwake(true) }
+    }
+}
+
 public struct UserContext {
     public static func isScreenLocked() -> Bool {
         guard let dict = CGSessionCopyCurrentDictionary() as NSDictionary? else { return false }

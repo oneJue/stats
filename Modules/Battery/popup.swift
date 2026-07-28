@@ -44,6 +44,11 @@ internal class Popup: PopupWrapper {
     private var processesInitialized: Bool = false
     
     private let usageCache = PopupCache<Battery_Usage>()
+
+    // Personal power toggles (合盖不休眠 / 保持亮屏) — appended to this popup so
+    // they're reachable even when the combined popup isn't used.
+    private var lidSwitch: NSSwitch? = nil
+    private var awakeSwitch: NSSwitch? = nil
     
     private var numberOfProcesses: Int {
         Store.shared.int(key: "\(self.title)_processes", defaultValue: 8)
@@ -65,7 +70,8 @@ internal class Popup: PopupWrapper {
         self.addArrangedSubview(self.initDetails())
         self.addArrangedSubview(self.initBattery())
         self.addArrangedSubview(self.initProcesses())
-        
+        self.addArrangedSubview(self.initPowerToggles())
+
         self.recalculateHeight()
     }
     
@@ -75,12 +81,71 @@ internal class Popup: PopupWrapper {
     
     public override func appear() {
         self.replay(self.usageCache, render: self.renderUsage)
+        // Sync power toggles with persisted state on each popup open.
+        self.lidSwitch?.state = Store.shared.bool(key: "lid_no_sleep_state", defaultValue: false) ? .on : .off
+        self.awakeSwitch?.state = Store.shared.bool(key: "keep_screen_awake_state", defaultValue: false) ? .on : .off
     }
     
     public override func disappear() {
         self.processes?.setLock(false)
     }
-    
+
+    // MARK: - Personal power toggles (合盖不休眠 / 保持亮屏)
+    // Backed by Kit's PowerTweaks (IOKit assertions) — no admin password. Shares
+    // the same Store keys as the Settings→Application→Power and combined-popup toggles.
+    private func initPowerToggles() -> NSView {
+        let view = NSStackView(frame: NSRect(x: 0, y: 0, width: self.frame.width, height: 0))
+        view.orientation = .vertical
+        view.spacing = 0
+        view.addArrangedSubview(SeparatorView(label: "Power"))
+
+        self.lidSwitch = self.switchView(
+            action: #selector(self.toggleLidNoSleep(_:)),
+            state: Store.shared.bool(key: "lid_no_sleep_state", defaultValue: false)
+        )
+        self.awakeSwitch = self.switchView(
+            action: #selector(self.toggleKeepScreenAwake(_:)),
+            state: Store.shared.bool(key: "keep_screen_awake_state", defaultValue: false)
+        )
+        view.addArrangedSubview(self.makeSwitchRow(localizedString("Prevent sleep on lid close"), self.lidSwitch!))
+        view.addArrangedSubview(self.makeSwitchRow(localizedString("Keep screen awake"), self.awakeSwitch!))
+        return view
+    }
+
+    private func makeSwitchRow(_ title: String, _ control: NSView) -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.edgeInsets = NSEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
+        row.spacing = 6
+        let label = NSTextField(labelWithString: title)
+        label.font = .menuFont(ofSize: 0)
+        label.lineBreakMode = .byTruncatingTail
+        row.addArrangedSubview(label)
+        row.addArrangedSubview(NSView())  // flexible spacer
+        row.addArrangedSubview(control)
+        return row
+    }
+
+    @objc func toggleLidNoSleep(_ s: NSSwitch) {
+        let on = s.state == .on
+        if PowerTweaks.shared.setLidNoSleep(on) {
+            Store.shared.set(key: "lid_no_sleep_state", value: on)
+        } else {
+            s.state = Store.shared.bool(key: "lid_no_sleep_state", defaultValue: false) ? .on : .off
+        }
+    }
+
+    @objc func toggleKeepScreenAwake(_ s: NSSwitch) {
+        let on = s.state == .on
+        if PowerTweaks.shared.setKeepScreenAwake(on) {
+            Store.shared.set(key: "keep_screen_awake_state", value: on)
+        } else {
+            s.state = Store.shared.bool(key: "keep_screen_awake_state", defaultValue: false) ? .on : .off
+        }
+    }
+
     private func recalculateHeight() {
         var h: CGFloat = 0
         self.arrangedSubviews.forEach { v in
