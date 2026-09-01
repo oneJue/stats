@@ -75,7 +75,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         self.suppressStatusBarTilingConstraintUpdates()
         self.parseArguments()
         self.parseVersion()
-        SMCHelper.shared.checkForUpdate()
+        SMCHelper.shared.checkForUpdate {
+            PowerController.shared.restoreFromStore()
+        }
         self.setup {
             modules.reversed().forEach{ $0.mount() }
             self.modulesMounted = true
@@ -83,8 +85,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         self.defaultValues()
         self.icon()
-        PowerTweaks.shared.restoreFromStore()
-
         NotificationCenter.default.addObserver(self, selector: #selector(listenForAppPause), name: .pause, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleToggleSettings), name: .toggleSettings, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleRemoteAuthenticated), name: .remoteAuthenticated, object: nil)

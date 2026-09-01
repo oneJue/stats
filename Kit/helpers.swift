@@ -1104,31 +1104,111 @@ public class SMCHelper {
         guard let helper = self.helper(nil) else { return }
         helper.resetFanControl { _ in }
     }
+
+    public func setLidSleepPrevention(_ enabled: Bool, completion: @escaping (PowerControlResult) -> Void) {
+        let lock = NSLock()
+        var completed = false
+        let finish: (PowerControlResult) -> Void = { result in
+            lock.lock()
+            guard !completed else {
+                lock.unlock()
+                return
+            }
+            completed = true
+            lock.unlock()
+            DispatchQueue.main.async {
+                completion(result)
+            }
+        }
+
+        let apply = {
+            guard let helper = self.helper({ connected in
+                if !connected {
+                    finish(.failed("The privileged helper is unavailable."))
+                }
+            }) else {
+                finish(.failed("The privileged helper is unavailable."))
+                return
+            }
+            helper.setLidSleepPrevention(enabled) { success, error in
+                if let error {
+                    finish(.failed(error))
+                } else if !success {
+                    finish(.failed("The system power setting could not be updated."))
+                } else {
+                    finish(.success)
+                }
+            }
+        }
+
+        guard !self.isInstalled else {
+            apply()
+            return
+        }
+        self.install { state in
+            switch state {
+            case .enabled:
+                apply()
+            case .requiresApproval:
+                finish(.requiresApproval)
+            case .failed:
+                finish(.failed("Stats could not install its privileged helper."))
+            }
+        }
+    }
     
     public func isActive() -> Bool {
         return self.connection != nil
     }
     
-    public func checkForUpdate() {
+    public func checkForUpdate(completion: @escaping () -> Void = {}) {
+        let lock = NSLock()
+        var completed = false
+        let finish = {
+            lock.lock()
+            guard !completed else {
+                lock.unlock()
+                return
+            }
+            completed = true
+            lock.unlock()
+            DispatchQueue.main.async {
+                completion()
+            }
+        }
+
         if #available(macOS 13, *) {
             self.cleanupLegacyInstall()
-            guard SMAppService.daemon(plistName: self.plistName).status == .enabled else { return }
+            guard SMAppService.daemon(plistName: self.plistName).status == .enabled else {
+                finish()
+                return
+            }
         }
         
         let helperURL = Bundle.main.bundleURL.appendingPathComponent("Contents/Library/LaunchServices/eu.exelban.Stats.SMC.Helper")
         guard let helperBundleInfo = CFBundleCopyInfoDictionaryForURL(helperURL as CFURL) as? [String: Any],
               let helperVersion = helperBundleInfo["CFBundleShortVersionString"] as? String,
-              let helper = self.helper(nil) else { return }
+              let helper = self.helper({ connected in
+                  if !connected { finish() }
+              }) else {
+            finish()
+            return
+        }
         
         helper.version { installedHelperVersion in
-            guard installedHelperVersion != helperVersion else { return }
+            guard installedHelperVersion != helperVersion else {
+                finish()
+                return
+            }
             print("new version of SMC helper is detected (\(installedHelperVersion) -> \(helperVersion)), going to update...")
-            self.uninstall(silent: true)
-            self.install { state in
-                if case .enabled = state {
-                    print("the new version of SMC helper was successfully installed")
-                } else {
-                    print("error when installing a new version of the SMC helper")
+            self.uninstall(silent: true) {
+                self.install { state in
+                    if case .enabled = state {
+                        print("the new version of SMC helper was successfully installed")
+                    } else {
+                        print("error when installing a new version of the SMC helper")
+                    }
+                    finish()
                 }
             }
         }
@@ -1250,6 +1330,7 @@ public class SMCHelper {
             self?.connection?.invalidationHandler = nil
             OperationQueue.main.addOperation { [weak self] in
                 self?.connection = nil
+                NotificationCenter.default.post(name: .privilegedHelperConnectionInvalidated, object: nil)
             }
         }
         
@@ -1266,40 +1347,74 @@ public class SMCHelper {
         }
         guard let service = helper.remoteObjectProxyWithErrorHandler({ error in
             print(error)
+            completion?(false)
         }) as? HelperProtocol else {
             completion?(false)
             return nil
         }
         
-        service.setSMCPath(Bundle.main.path(forResource: "smc", ofType: nil)!)
+        guard let smcPath = Bundle.main.path(forResource: "smc", ofType: nil) else {
+            completion?(false)
+            return nil
+        }
+        service.setSMCPath(smcPath)
         
         return service
     }
     
-    public func uninstall(silent: Bool = false) {
+    public func uninstall(silent: Bool = false, completion: @escaping () -> Void = {}) {
         if let count = SMC.shared.getValue("FNum") {
             for i in 0..<Int(count) {
                 self.setFanMode(i, mode: 0)
             }
         }
         if #available(macOS 13, *) {
-            do {
-                try SMAppService.daemon(plistName: self.plistName).unregister()
-            } catch {
-                print("failed to unregister SMC helper daemon: \(error.localizedDescription)")
+            let lock = NSLock()
+            var completed = false
+            let unregister = {
+                lock.lock()
+                guard !completed else {
+                    lock.unlock()
+                    return
+                }
+                completed = true
+                lock.unlock()
+
+                DispatchQueue.main.async {
+                    do {
+                        try SMAppService.daemon(plistName: self.plistName).unregister()
+                    } catch {
+                        print("failed to unregister SMC helper daemon: \(error.localizedDescription)")
+                    }
+                    self.connection?.invalidationHandler = nil
+                    self.connection?.invalidate()
+                    self.connection = nil
+                    if !silent {
+                        NotificationCenter.default.post(name: .fanHelperState, object: nil, userInfo: ["state": false])
+                    }
+                    completion()
+                }
             }
-            self.connection?.invalidate()
-            self.connection = nil
-            if !silent {
-                NotificationCenter.default.post(name: .fanHelperState, object: nil, userInfo: ["state": false])
+
+            guard self.isInstalled,
+                  let helper = self.helper({ connected in
+                      if !connected { unregister() }
+                  }) else {
+                unregister()
+                return
             }
+            helper.setLidSleepPrevention(false) { _, _ in unregister() }
             return
         }
-        guard let helper = self.helper(nil) else { return }
+        guard let helper = self.helper(nil) else {
+            completion()
+            return
+        }
         helper.uninstall()
         if !silent {
             NotificationCenter.default.post(name: .fanHelperState, object: nil, userInfo: ["state": false])
         }
+        completion()
     }
 }
 
@@ -2380,62 +2495,6 @@ public class SeparatorView: NSStackView {
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         view.heightAnchor.constraint(equalToConstant: 1).isActive = true
         return view
-    }
-}
-
-// MARK: - PowerTweaks (IOKit power assertions, no admin password)
-// Lid-no-sleep via PreventSystemSleep assertion; keep-awake via
-// PreventUserIdleDisplaySleep (NOT PreventDisplaySleep — that one silently fails
-// to hold a live assertion for user apps). Uses the same `import IOKit.pwr_mgt`
-// as UserContext.isDisplaySleepPrevented below — no dlopen needed here. Public so
-// module frameworks (e.g. Battery popup) can call PowerTweaks.shared.* directly.
-public final class PowerTweaks {
-    public static let shared = PowerTweaks()
-    private var lidAssertion: UInt32 = 0
-    private var awakeAssertion: UInt32 = 0
-    private init() {}
-
-    @discardableResult
-    public func setLidNoSleep(_ on: Bool) -> Bool {
-        if on {
-            guard self.lidAssertion == 0 else { return true }
-            var id: UInt32 = 0
-            let r = IOPMAssertionCreateWithName(
-                "PreventSystemSleep" as CFString,        // kIOPMAssertionTypePreventSystemSleep
-                255,                                      // kIOPMAssertionLevelOn
-                "Stats — lid no sleep" as CFString,
-                &id)
-            guard r == kIOReturnSuccess else { NSLog("PowerTweaks: lid assertion -> %d", r); return false }
-            self.lidAssertion = id
-            return true
-        }
-        if self.lidAssertion != 0 { _ = IOPMAssertionRelease(self.lidAssertion); self.lidAssertion = 0 }
-        return true
-    }
-
-    @discardableResult
-    public func setKeepScreenAwake(_ on: Bool) -> Bool {
-        if on {
-            guard self.awakeAssertion == 0 else { return true }
-            var id: UInt32 = 0
-            let r = IOPMAssertionCreateWithName(
-                "PreventUserIdleDisplaySleep" as CFString,  // kIOPMAssertionTypePreventUserIdleDisplaySleep
-                255,                                          // kIOPMAssertionLevelOn
-                "Stats — keep display awake" as CFString,
-                &id)
-            guard r == kIOReturnSuccess else { NSLog("PowerTweaks: display assertion -> %d", r); return false }
-            self.awakeAssertion = id
-            return true
-        }
-        if self.awakeAssertion != 0 { _ = IOPMAssertionRelease(self.awakeAssertion); self.awakeAssertion = 0 }
-        return true
-    }
-
-    /// Re-assert toggles persisted in Store (call on app launch — assertions are
-    /// process-held and don't survive restart).
-    public func restoreFromStore() {
-        if Store.shared.bool(key: "lid_no_sleep_state", defaultValue: false) { _ = self.setLidNoSleep(true) }
-        if Store.shared.bool(key: "keep_screen_awake_state", defaultValue: false) { _ = self.setKeepScreenAwake(true) }
     }
 }
 

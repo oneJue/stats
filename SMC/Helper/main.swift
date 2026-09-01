@@ -18,6 +18,8 @@ helper.run()
 class Helper: NSObject, NSXPCListenerDelegate, HelperProtocol {
     private let listener: NSXPCListener
     private let smcQueue = DispatchQueue(label: "eu.exelban.Stats.SMC.Helper.smcQueue")
+    private let powerQueue = DispatchQueue(label: "eu.exelban.Stats.SMC.Helper.powerQueue")
+    private let powerSettings = PowerSettings()
     
     private var connections = [NSXPCConnection]()
     private var shouldQuit = false
@@ -29,6 +31,11 @@ class Helper: NSObject, NSXPCListenerDelegate, HelperProtocol {
         self.listener = NSXPCListener(machServiceName: "eu.exelban.Stats.SMC.Helper")
         super.init()
         self.listener.delegate = self
+        do {
+            try self.powerSettings.recoverInterruptedSession()
+        } catch {
+            NSLog("failed to recover interrupted power session: \(error.localizedDescription)")
+        }
     }
     
     public func run() {
@@ -73,6 +80,13 @@ class Helper: NSObject, NSXPCListenerDelegate, HelperProtocol {
                 self.connections.remove(at: connectionIndex)
             }
             if self.connections.isEmpty {
+                self.powerQueue.sync {
+                    do {
+                        try self.powerSettings.setLidSleepPrevention(false)
+                    } catch {
+                        NSLog("failed to restore lid sleep setting: \(error.localizedDescription)")
+                    }
+                }
                 self.shouldQuit = true
             }
         }
@@ -178,6 +192,17 @@ extension Helper {
             completion(result.output)
         }
     }
+
+    func setLidSleepPrevention(_ enabled: Bool, completion: (Bool, String?) -> Void) {
+        self.powerQueue.sync {
+            do {
+                try self.powerSettings.setLidSleepPrevention(enabled)
+                completion(true, nil)
+            } catch {
+                completion(false, error.localizedDescription)
+            }
+        }
+    }
     
     public func callSMC(_ arguments: [String]) -> (output: String?, error: String?) {
         guard let smc = self.smc else {
@@ -217,6 +242,13 @@ extension Helper {
     }
     
     func uninstall() {
+        self.powerQueue.sync {
+            do {
+                try self.powerSettings.setLidSleepPrevention(false)
+            } catch {
+                NSLog("failed to restore lid sleep setting before uninstall: \(error.localizedDescription)")
+            }
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/Library/PrivilegedHelperTools/eu.exelban.Stats.SMC.Helper")
         process.qualityOfService = QualityOfService.userInitiated
@@ -236,6 +268,8 @@ enum CodesignCheckError: Error {
 }
 
 struct CodesignCheck {
+    private static let clientIdentifier = "eu.exelban.Stats"
+
     public static func auditToken(for connection: NSXPCConnection) -> audit_token_t? {
         let raw = connection.value(forKey: "auditToken")
         var token = audit_token_t()
@@ -251,7 +285,16 @@ struct CodesignCheck {
     }
     
     public static func codeSigningMatches(auditToken token: audit_token_t) throws -> Bool {
-        return try self.codeSigningCertificatesForSelf() == self.codeSigningCertificates(forAuditToken: token)
+        guard let selfCode = try self.secStaticCodeSelf(),
+              let clientCode = try self.secStaticCode(forAuditToken: token) else {
+            return false
+        }
+        let selfCertificates = try self.codeSigningCertificates(forStaticCode: selfCode)
+        let clientCertificates = try self.codeSigningCertificates(forStaticCode: clientCode)
+        guard !selfCertificates.isEmpty, selfCertificates == clientCertificates else {
+            return false
+        }
+        return try self.codeSigningIdentifier(forStaticCode: clientCode) == self.clientIdentifier
     }
     
     public static func matchesSelf(path: String) -> Bool {
@@ -271,11 +314,6 @@ struct CodesignCheck {
     
     private static func codeSigningCertificatesForSelf() throws -> [SecCertificate] {
         guard let secStaticCode = try secStaticCodeSelf() else { return [] }
-        return try codeSigningCertificates(forStaticCode: secStaticCode)
-    }
-    
-    private static func codeSigningCertificates(forAuditToken token: audit_token_t) throws -> [SecCertificate] {
-        guard let secStaticCode = try secStaticCode(forAuditToken: token) else { return [] }
         return try codeSigningCertificates(forStaticCode: secStaticCode)
     }
     
@@ -333,5 +371,9 @@ struct CodesignCheck {
             let secCodeInfo = try secCodeInfo(forStaticCode: secStaticCode),
             let secCertificates = secCodeInfo[kSecCodeInfoCertificates as String] as? [SecCertificate] else { return [] }
         return secCertificates
+    }
+
+    private static func codeSigningIdentifier(forStaticCode secStaticCode: SecStaticCode) throws -> String? {
+        return try secCodeInfo(forStaticCode: secStaticCode)?[kSecCodeInfoIdentifier as String] as? String
     }
 }

@@ -312,6 +312,8 @@ public extension Notification.Name {
     static let syncFansControl = Notification.Name("syncFansControl")
     static let checkFanModes = Notification.Name("checkFanModes")
     static let fanHelperState = Notification.Name("fanHelperState")
+    static let privilegedHelperConnectionInvalidated = Notification.Name("privilegedHelperConnectionInvalidated")
+    static let powerStateChanged = Notification.Name("powerStateChanged")
     static let toggleOneView = Notification.Name("toggleOneView")
     static let widgetRearrange = Notification.Name("widgetRearrange")
     static let moduleRearrange = Notification.Name("moduleRearrange")

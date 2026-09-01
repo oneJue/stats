@@ -87,6 +87,9 @@
 		5CF2211B2B1F8CEF006C583F /* notifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CF2211A2B1F8CEF006C583F /* notifications.swift */; };
 		5CFE492A29264DF1000F2856 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CFE492929264DF1000F2856 /* main.swift */; };
 		5CFE493929265055000F2856 /* protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CFE493829265055000F2856 /* protocol.swift */; };
+		A1B2C3D4E5F6010203040506 /* PowerSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010203040505 /* PowerSettings.swift */; };
+		A1B2C3D4E5F6010203040507 /* PowerSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010203040505 /* PowerSettings.swift */; };
+		B1C2D3E4F5060708090A0B0D /* PowerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C2D3E4F5060708090A0B0C /* PowerController.swift */; };
 		5CFE493D2926513E000F2856 /* eu.exelban.Stats.SMC.Helper in Copy Files */ = {isa = PBXBuildFile; fileRef = 5CFE492729264DF1000F2856 /* eu.exelban.Stats.SMC.Helper */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		5CFE494429265421000F2856 /* changelog.py in Resources */ = {isa = PBXBuildFile; fileRef = 5CFE494329265421000F2856 /* changelog.py */; };
 		5E0C634F2FBDB7DE00D9BA3E /* Remote.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5E0C63472FBDB7DE00D9BA3E /* Remote.framework */; };
@@ -619,6 +622,8 @@
 		5CFE492729264DF1000F2856 /* eu.exelban.Stats.SMC.Helper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = eu.exelban.Stats.SMC.Helper; sourceTree = BUILT_PRODUCTS_DIR; };
 		5CFE492929264DF1000F2856 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		5CFE493829265055000F2856 /* protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = protocol.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6010203040505 /* PowerSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerSettings.swift; sourceTree = "<group>"; };
+		B1C2D3E4F5060708090A0B0C /* PowerController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerController.swift; sourceTree = "<group>"; };
 		5CFE493A292650BD000F2856 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		5CFE493B292650F8000F2856 /* Launchd.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Launchd.plist; sourceTree = "<group>"; };
 		5CFE494129265418000F2856 /* uninstall.sh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.sh; path = uninstall.sh; sourceTree = "<group>"; };
@@ -1003,6 +1008,7 @@
 			children = (
 				5CFE492929264DF1000F2856 /* main.swift */,
 				5CFE493829265055000F2856 /* protocol.swift */,
+				A1B2C3D4E5F6010203040505 /* PowerSettings.swift */,
 				5CFE493A292650BD000F2856 /* Info.plist */,
 				5CFE493B292650F8000F2856 /* Launchd.plist */,
 				5CD3A10129265130000F2856 /* eu.exelban.Stats.SMC.Helper.plist */,
@@ -1281,6 +1287,7 @@
 		9AA81547266A9ACA008C01D0 /* plugins */ = {
 			isa = PBXGroup;
 			children = (
+				B1C2D3E4F5060708090A0B0C /* PowerController.swift */,
 				5C038CF52D86EE8700516809 /* SystemStats.swift */,
 				9A2848022666AB2F00EC1F6D /* Store.swift */,
 				9A2848042666AB2F00EC1F6D /* Charts.swift */,
@@ -2178,6 +2185,7 @@
 			files = (
 				5CFE492A29264DF1000F2856 /* main.swift in Sources */,
 				5CFE493929265055000F2856 /* protocol.swift in Sources */,
+				A1B2C3D4E5F6010203040506 /* PowerSettings.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2224,6 +2232,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B1C2D3E4F5060708090A0B0D /* PowerController.swift in Sources */,
 				5C8E001029269C7F0027C75A /* protocol.swift in Sources */,
 				5C621D822B4770D6004ED7AF /* process.swift in Sources */,
 				9AD7F866266F759200E5F863 /* smc.swift in Sources */,
@@ -2339,6 +2348,7 @@
 			files = (
 				9AAC5E41280ACC210043D892 /* RAM.swift in Sources */,
 				4A05F9BD83C04F70BFFF7F37 /* Kit.swift in Sources */,
+				A1B2C3D4E5F6010203040507 /* PowerSettings.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

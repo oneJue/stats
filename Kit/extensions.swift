@@ -272,13 +272,13 @@ public extension NSView {
         return SColorSelectView(target: self, action: action, items: items, selected: selected)
     }
     
-    func switchView(action: Selector, state: Bool) -> NSSwitch {
+    func switchView(target: AnyObject? = nil, action: Selector, state: Bool) -> NSSwitch {
         let s = NSSwitch()
         s.heightAnchor.constraint(equalToConstant: 25).isActive = true
         s.controlSize = .mini
         s.state = state ? .on : .off
         s.action = action
-        s.target = self
+        s.target = target ?? self
         return s
     }
     

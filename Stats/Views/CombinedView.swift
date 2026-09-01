@@ -241,8 +241,7 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
 private class Popup: NSStackView, Popup_p {
     fileprivate var keyboardShortcut: [UInt16] = []
     fileprivate var sizeCallback: ((NSSize) -> Void)? = nil
-    fileprivate var lidSwitch: NSSwitch? = nil
-    fileprivate var awakeSwitch: NSSwitch? = nil
+    private let powerToggleCoordinator = PowerToggleCoordinator()
     private let powerSectionHeight: CGFloat = 96
     
     init() {
@@ -270,10 +269,7 @@ private class Popup: NSStackView, Popup_p {
     
     fileprivate func settings() -> NSView? { return nil }
     fileprivate func appear() {
-        // Sync the power toggles' visual state with the persisted Store values
-        // each time the popup is shown (they may have changed elsewhere).
-        self.lidSwitch?.state = Store.shared.bool(key: "lid_no_sleep_state", defaultValue: false) ? .on : .off
-        self.awakeSwitch?.state = Store.shared.bool(key: "keep_screen_awake_state", defaultValue: false) ? .on : .off
+        self.powerToggleCoordinator.synchronize()
     }
     fileprivate func disappear() {}
     fileprivate func setKeyboardShortcut(_ binding: [UInt16]) {
@@ -281,10 +277,7 @@ private class Popup: NSStackView, Popup_p {
         Store.shared.set(key: "CombinedModules_popup_keyboardShortcut", value: binding)
     }
 
-    // MARK: - Personal power toggles (合盖不休眠 / 保持亮屏)
-    // Appended to the combined modules popup. Shares the same Store keys as the
-    // Application→Power section, so the two stay in sync. pmset is run via an
-    // AppleScript admin prompt (stats main app is not sandboxed).
+    // MARK: - Power
     private func buildPowerSection() -> NSView {
         let section = NSStackView(frame: .zero)
         section.orientation = .vertical
@@ -294,17 +287,21 @@ private class Popup: NSStackView, Popup_p {
         section.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
         section.heightAnchor.constraint(equalToConstant: self.powerSectionHeight).isActive = true
 
-        self.lidSwitch = self.makeSwitch(
-            #selector(self.toggleLidNoSleep),
-            state: Store.shared.bool(key: "lid_no_sleep_state", defaultValue: false)
+        let lidNoSleepSwitch = self.makePowerSwitch(
+            #selector(PowerToggleCoordinator.toggleLidNoSleep(_:)),
+            state: PowerController.shared.lidNoSleepEnabled
         )
-        self.awakeSwitch = self.makeSwitch(
-            #selector(self.toggleKeepScreenAwake),
-            state: Store.shared.bool(key: "keep_screen_awake_state", defaultValue: false)
+        let keepScreenAwakeSwitch = self.makePowerSwitch(
+            #selector(PowerToggleCoordinator.toggleKeepScreenAwake(_:)),
+            state: PowerController.shared.keepScreenAwakeEnabled
+        )
+        self.powerToggleCoordinator.bind(
+            lidSwitch: lidNoSleepSwitch,
+            displaySwitch: keepScreenAwakeSwitch
         )
 
-        section.addArrangedSubview(self.makeRow(localizedString("Prevent sleep on lid close"), self.lidSwitch!))
-        section.addArrangedSubview(self.makeRow(localizedString("Keep screen awake"), self.awakeSwitch!))
+        section.addArrangedSubview(self.makeRow(localizedString("Prevent sleep on lid close"), lidNoSleepSwitch))
+        section.addArrangedSubview(self.makeRow(localizedString("Keep screen awake"), keepScreenAwakeSwitch))
         return section
     }
 
@@ -324,30 +321,13 @@ private class Popup: NSStackView, Popup_p {
         return row
     }
 
-    private func makeSwitch(_ action: Selector, state: Bool) -> NSSwitch {
+    private func makePowerSwitch(_ action: Selector, state: Bool) -> NSSwitch {
         let s = NSSwitch()
         s.controlSize = .small
         s.state = state ? .on : .off
-        s.target = self
+        s.target = self.powerToggleCoordinator
         s.action = action
         return s
-    }
-
-    @objc private func toggleLidNoSleep(_ sender: NSSwitch) {
-        let on = sender.state == .on
-        if PowerTweaks.shared.setLidNoSleep(on) {
-            Store.shared.set(key: "lid_no_sleep_state", value: on)
-        } else {
-            sender.state = Store.shared.bool(key: "lid_no_sleep_state", defaultValue: false) ? .on : .off
-        }
-    }
-    @objc private func toggleKeepScreenAwake(_ sender: NSSwitch) {
-        let on = sender.state == .on
-        if PowerTweaks.shared.setKeepScreenAwake(on) {
-            Store.shared.set(key: "keep_screen_awake_state", value: on)
-        } else {
-            sender.state = Store.shared.bool(key: "keep_screen_awake_state", defaultValue: false) ? .on : .off
-        }
     }
 
     @objc private func reinit() {
@@ -360,8 +340,6 @@ private class Popup: NSStackView, Popup_p {
             }
         }
 
-        // Personal add-on: power toggles (合盖不休眠 / 保持亮屏) appended to the
-        // combined modules popup so they're one click away from the menubar icon.
         self.addArrangedSubview(self.buildPowerSection())
 
         let moduleCount = availableModules.count
