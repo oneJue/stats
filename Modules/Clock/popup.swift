@@ -590,6 +590,7 @@ private class CalendarItemView: NSView {
 
 internal class ClockView: NSStackView {
     public var clock: Clock_t
+    private let background: Bool
     
     open override var intrinsicContentSize: CGSize {
         return CGSize(width: self.bounds.width, height: self.bounds.height)
@@ -603,8 +604,9 @@ internal class ClockView: NSStackView {
     private let tzField: NSTextField = TextView()
     private let dateField: NSTextField = TextView()
     
-    init(width: CGFloat, clock: Clock_t) {
+    init(width: CGFloat, clock: Clock_t, background: Bool = true, nameSize: CGFloat = 11, timeSize: CGFloat = 13) {
         self.clock = clock
+        self.background = background
         
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: 50))
         
@@ -628,14 +630,14 @@ internal class ClockView: NSStackView {
         container.orientation = .vertical
         container.spacing = 2
         container.distribution = .fillEqually
-        container.alignment = .left
+        container.alignment = .leading
         
-        self.nameField.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        self.nameField.font = NSFont.systemFont(ofSize: nameSize, weight: .medium)
         self.nameField.textColor = .tertiaryLabelColor
         self.nameField.stringValue = self.clock.name
         self.nameField.cell?.truncatesLastVisibleLine = true
         
-        self.timeField.font = NSFont.systemFont(ofSize: 13, weight: .regular)
+        self.timeField.font = NSFont.systemFont(ofSize: timeSize, weight: .regular)
         self.timeField.stringValue = clock.formatted()
         self.timeField.cell?.truncatesLastVisibleLine = true
         
@@ -647,15 +649,15 @@ internal class ClockView: NSStackView {
         details.orientation = .vertical
         details.spacing = 2
         details.distribution = .fillEqually
-        details.alignment = .right
+        details.alignment = .trailing
         
-        self.tzField.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        self.tzField.font = NSFont.systemFont(ofSize: nameSize, weight: .medium)
         self.tzField.textColor = .tertiaryLabelColor
-        self.tzField.alignment = .right
+        self.tzField.alignment = .trailing
         
-        self.dateField.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        self.dateField.font = NSFont.systemFont(ofSize: nameSize, weight: .regular)
         self.dateField.textColor = .tertiaryLabelColor
-        self.dateField.alignment = .right
+        self.dateField.alignment = .trailing
         
         details.addArrangedSubview(self.tzField)
         details.addArrangedSubview(self.dateField)
@@ -673,6 +675,7 @@ internal class ClockView: NSStackView {
     }
     
     override func updateLayer() {
+        guard self.background else { return }
         self.layer?.backgroundColor = (isDarkMode ? NSColor(red: 17/255, green: 17/255, blue: 17/255, alpha: 0.25) : NSColor(red: 245/255, green: 245/255, blue: 245/255, alpha: 1)).cgColor
     }
     

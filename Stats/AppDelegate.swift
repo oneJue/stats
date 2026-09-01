@@ -74,8 +74,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         
         self.suppressStatusBarTilingConstraintUpdates()
         self.parseArguments()
-        self.parseVersion()
-        SMCHelper.shared.checkForUpdate {
+        let hostAppUpdated = self.parseVersion()
+        SMCHelper.shared.checkForUpdate(hostAppUpdated: hostAppUpdated) {
             PowerController.shared.restoreFromStore()
         }
         self.setup {

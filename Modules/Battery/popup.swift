@@ -26,6 +26,7 @@ internal class Popup: PopupWrapper {
     private var currentField: NSTextField? = nil
     private var voltageField: NSTextField? = nil
     
+    private var batterySection: NSView? = nil
     private var barView: BarChartView = BarChartView(size: 10, horizontal: true)
     private var maxCapacityField: NSTextField? = nil
     private var designedCapacityField: NSTextField? = nil
@@ -36,8 +37,8 @@ internal class Popup: PopupWrapper {
     private var adapterView: NSView? = nil
     private var chargingStateField: StatusBadgeView? = nil
     private var adapterPowerField: NSTextField? = nil
-    private var chargingCurrentField: NSTextField? = nil
-    private var chargingVoltageField: NSTextField? = nil
+    private var adapterCurrentField: NSTextField? = nil
+    private var adapterVoltageField: NSTextField? = nil
     
     private var processesView: NSView? = nil
     private var processes: ProcessesView? = nil
@@ -45,8 +46,6 @@ internal class Popup: PopupWrapper {
     
     private let usageCache = PopupCache<Battery_Usage>()
 
-    // Personal power toggles (合盖不休眠 / 保持亮屏) — appended to this popup so
-    // they're reachable even when the combined popup isn't used.
     private let powerToggleCoordinator = PowerToggleCoordinator()
     
     private var numberOfProcesses: Int {
@@ -124,7 +123,8 @@ internal class Popup: PopupWrapper {
         label.font = .menuFont(ofSize: 0)
         label.lineBreakMode = .byTruncatingTail
         row.addArrangedSubview(label)
-        row.addArrangedSubview(NSView())  // flexible spacer
+        let spacer = NSView()
+        row.addArrangedSubview(spacer)
         row.addArrangedSubview(control)
         return row
     }
@@ -208,10 +208,6 @@ internal class Popup: PopupWrapper {
         self.timeLabelField = time.0
         self.timeField = time.1
         
-        self.powerField = popupRow(view, title: "\(localizedString("Power")):", value: "0 W").1
-        self.currentField = popupRow(view, title: "\(localizedString("Current")):", value: "0 mA").1
-        self.voltageField = popupRow(view, title: "\(localizedString("Voltage")):", value: "0 V").1
-        
         return view
     }
     
@@ -243,7 +239,7 @@ internal class Popup: PopupWrapper {
                     max.textColor = .tertiaryLabelColor
                     let designed = LabelField(localizedString("Designed capacity"), size: 8)
                     designed.textColor = .tertiaryLabelColor
-                    designed.alignment = .right
+                    designed.alignment = .trailing
                     
                     row.addArrangedSubview(max)
                     row.addArrangedSubview(NSView())
@@ -262,7 +258,7 @@ internal class Popup: PopupWrapper {
                     max.textColor = .secondaryLabelColor
                     let designed = LabelField("0 mAh", size: 11)
                     designed.textColor = .secondaryLabelColor
-                    designed.alignment = .right
+                    designed.alignment = .trailing
                     
                     self.maxCapacityField = max
                     self.designedCapacityField = designed
@@ -291,9 +287,14 @@ internal class Popup: PopupWrapper {
         
         view.addArrangedSubview(health)
         
+        self.powerField = popupRow(view, title: "\(localizedString("Power")):", value: "0 W").1
+        self.currentField = popupRow(view, title: "\(localizedString("Current")):", value: "0 mA").1
+        self.voltageField = popupRow(view, title: "\(localizedString("Voltage")):", value: "0 V").1
         self.healthField = popupRow(view, title: "\(localizedString("Health")):", value: "").1
         self.cyclesField = popupRow(view, title: "\(localizedString("Cycles")):", value: "").1
         self.temperatureField = popupRow(view, title: "\(localizedString("Temperature")):", value: "").1
+        
+        self.batterySection = view
         
         return view
     }
@@ -305,7 +306,9 @@ internal class Popup: PopupWrapper {
         view.addArrangedSubview(SeparatorView(label: localizedString("Power adapter")))
         
         self.chargingStateField = popupBadgeRow(view, title: "\(localizedString("Is charging")):", ok: "Yes", notOk: "No").1
-        self.adapterPowerField = popupRow(view, title: "\(localizedString("Power")):", value: "").1
+        self.adapterPowerField = popupRow(view, title: "\(localizedString("Power")):", value: "0 W").1
+        self.adapterCurrentField = popupRow(view, title: "\(localizedString("Current")):", value: "0 mA").1
+        self.adapterVoltageField = popupRow(view, title: "\(localizedString("Voltage")):", value: "0 V").1
         
         self.adapterView = view
         
@@ -358,10 +361,6 @@ internal class Popup: PopupWrapper {
                 self.adapterView = nil
                 self.recalculateHeight()
             }
-            
-            self.powerField?.stringValue = "\(abs(value.batteryPower).roundTo(decimalPlaces: 2)) W"
-            self.currentField?.stringValue = "\(abs(value.current)) mA"
-            self.voltageField?.stringValue = "\(value.voltage.roundTo(decimalPlaces: 2)) V"
         } else {
             self.timeLabelField?.stringValue = "\(localizedString("Time to charge")):"
             if value.timeToCharge != -1 && value.timeToCharge != 0 {
@@ -371,18 +370,32 @@ internal class Popup: PopupWrapper {
             }
             
             if self.adapterView == nil {
-                self.insertArrangedSubview(self.initAdapter(), at: 3)
+                var index: Int = 3
+                if let section = self.batterySection, let i = self.arrangedSubviews.firstIndex(of: section) {
+                    index = i + 1
+                }
+                self.insertArrangedSubview(self.initAdapter(), at: index)
                 self.recalculateHeight()
             }
             
-            let current = value.adapterVoltage > 0 ? Int((value.adapterPower / value.adapterVoltage) * 1000) : 0
-            self.powerField?.stringValue = "\(value.adapterPower.roundTo(decimalPlaces: 2)) W"
-            self.currentField?.stringValue = "\(current) mA"
-            self.voltageField?.stringValue = "\(value.adapterVoltage.roundTo(decimalPlaces: 2)) V"
-            
             self.chargingStateField?.setStatus(value.isCharging)
-            self.adapterPowerField?.stringValue = "\(value.ACwatts) W"
+            
+            var power: String = value.adapterPower > 0 ? "\(value.adapterPower.roundTo(decimalPlaces: 2)) W" : ""
+            if value.ACwatts > 0 {
+                power = power.isEmpty ? "\(value.ACwatts) W" : "\(power) / \(value.ACwatts) W"
+            }
+            self.adapterPowerField?.stringValue = power.isEmpty ? "0 W" : power
+            
+            let adapterCurrent = value.adapterVoltage > 0 ? Int((value.adapterPower / value.adapterVoltage) * 1000) : 0
+            self.adapterCurrentField?.stringValue = "\(adapterCurrent) mA"
+            self.adapterCurrentField?.toolTip = "\(localizedString("Charging")): \(value.chargingCurrent) mA"
+            self.adapterVoltageField?.stringValue = "\(value.adapterVoltage.roundTo(decimalPlaces: 2)) V"
+            self.adapterVoltageField?.toolTip = "\(localizedString("Charging")): \((Double(value.chargingVoltage)/1000).roundTo(decimalPlaces: 2)) V"
         }
+        
+        self.powerField?.stringValue = "\(abs(value.batteryPower).roundTo(decimalPlaces: 2)) W"
+        self.currentField?.stringValue = "\(value.current) mA"
+        self.voltageField?.stringValue = "\(value.voltage.roundTo(decimalPlaces: 2)) V"
         
         if value.timeToEmpty == -1 || value.timeToCharge == -1 {
             self.timeField?.stringValue = localizedString("Calculating")
@@ -466,17 +479,25 @@ internal class BatteryView: NSView {
         
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         
-        let w: CGFloat = min(self.frame.width, 130)
-        let h: CGFloat = min(self.frame.height, 60)
+        let scale: CGFloat = Swift.min(self.frame.width/130, self.frame.height/60, 1)
+        let w: CGFloat = 130 * scale
+        let h: CGFloat = 60 * scale
         let x: CGFloat = (self.frame.width - w)/2
         let y: CGFloat = (self.frame.size.height - h) / 2
-        let batteryFrame = NSBezierPath(roundedRect: NSRect(x: x+1, y: y+1, width: w-8, height: h-2), xRadius: 16, yRadius: 16)
+        let lineWidth: CGFloat = Swift.max(1, 2*scale)
+        let pointWidth: CGFloat = 7 * scale
+        let batteryFrame = NSBezierPath(roundedRect: NSRect(
+            x: x + lineWidth/2,
+            y: y + lineWidth/2,
+            width: w - pointWidth - lineWidth,
+            height: h - lineWidth
+        ), xRadius: 16*scale, yRadius: 16*scale)
         
         NSColor.secondaryLabelColor.set()
         
         let bPX: CGFloat = batteryFrame.bounds.origin.x + batteryFrame.bounds.width
-        let bPY: CGFloat = batteryFrame.bounds.origin.y + (batteryFrame.bounds.height/2) - 12
-        let batteryPoint = NSBezierPath(roundedRect: NSRect(x: bPX, y: bPY, width: 7, height: 24), xRadius: 6, yRadius: 6)
+        let bPY: CGFloat = batteryFrame.bounds.origin.y + (batteryFrame.bounds.height/2) - (12*scale)
+        let batteryPoint = NSBezierPath(roundedRect: NSRect(x: bPX, y: bPY, width: pointWidth, height: 24*scale), xRadius: 6*scale, yRadius: 6*scale)
         batteryPoint.fill()
         
         let batteryPointSeparator = NSBezierPath()
@@ -485,28 +506,29 @@ internal class BatteryView: NSView {
         ctx.saveGState()
         ctx.setBlendMode(.destinationOut)
         NSColor.textColor.set()
-        batteryPointSeparator.lineWidth = 6
+        batteryPointSeparator.lineWidth = 6*scale
         batteryPointSeparator.stroke()
         ctx.restoreGState()
         
-        batteryFrame.lineWidth = 2
+        batteryFrame.lineWidth = lineWidth
         batteryFrame.stroke()
         
         if self.percentage == 0 {
             return
         }
         
-        let innerHeight: CGFloat = h-10
-        let minWidth: CGFloat = 8
-        let track: CGFloat = w-16
+        let innerPadding: CGFloat = 5 * scale
+        let innerHeight: CGFloat = h - (innerPadding*2)
+        let minWidth: CGFloat = 8 * scale
+        let track: CGFloat = w - (16*scale)
         var fillWidth: CGFloat = 0
         if self.percentage > 0 {
             fillWidth = minWidth + (track - minWidth) * CGFloat(self.percentage)
         }
-        let fillRadius: CGFloat = Swift.min(12, fillWidth/2, innerHeight/2)
+        let fillRadius: CGFloat = Swift.min(12*scale, fillWidth/2, innerHeight/2)
         let inner = NSBezierPath(roundedRect: NSRect(
-            x: x+5,
-            y: y+5,
+            x: x + innerPadding,
+            y: y + innerPadding,
             width: fillWidth,
             height: innerHeight
         ), xRadius: fillRadius, yRadius: fillRadius)
@@ -522,19 +544,20 @@ internal class BatteryView: NSView {
                 y: batteryFrame.bounds.origin.y + (batteryFrame.bounds.height/2)
             )
             let symbolName: String = self.charging ? "bolt.fill" : "powerplug.fill"
+            let symbolSize: CGFloat = 24 * scale
             
             if self.percentage > 0.55 {
-                guard let body = self.coloredSymbol(symbolName, color: .white) else { return }
+                guard let body = self.coloredSymbol(symbolName, color: .white, size: symbolSize) else { return }
                 let size: NSSize = body.size
                 body.draw(in: NSRect(x: center.x - (size.width/2), y: center.y - (size.height/2), width: size.width, height: size.height))
                 return
             }
             
-            guard let outline = self.coloredSymbol(symbolName, color: .black),
-                  let body = self.coloredSymbol(symbolName, color: self.percentage.batteryColorV2()) else { return }
+            guard let outline = self.coloredSymbol(symbolName, color: .black, size: symbolSize),
+                  let body = self.coloredSymbol(symbolName, color: self.percentage.batteryColorV2(), size: symbolSize) else { return }
             
             let size: NSSize = body.size
-            let border: CGFloat = 2
+            let border: CGFloat = Swift.max(1, 2*scale)
             let origin = CGPoint(x: center.x - (size.width/2), y: center.y - (size.height/2))
             
             let steps: Int = 24
@@ -563,8 +586,8 @@ internal class BatteryView: NSView {
         })
     }
     
-    private func coloredSymbol(_ name: String, color: NSColor) -> NSImage? {
-        var config = NSImage.SymbolConfiguration(pointSize: 24, weight: .bold)
+    private func coloredSymbol(_ name: String, color: NSColor, size: CGFloat) -> NSImage? {
+        var config = NSImage.SymbolConfiguration(pointSize: size, weight: .bold)
         config = config.applying(NSImage.SymbolConfiguration(paletteColors: [color]))
         let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
         image?.isTemplate = false

@@ -299,7 +299,7 @@ public class ValueField: NSTextField {
         
         self.stringValue = value
         self.textColor = .textColor
-        self.alignment = .right
+        self.alignment = .trailing
         self.font = NSFont.systemFont(ofSize: 13, weight: .regular)
         
         self.cell?.usesSingleLineMode = true
@@ -365,6 +365,16 @@ public class StatusBadgeView: NSStackView {
         self.status = value
         self.labelField.stringValue = self.label
         self.layer?.backgroundColor = self.color
+    }
+}
+
+public var isRTL: Bool {
+    NSApp.userInterfaceLayoutDirection == .rightToLeft
+}
+
+public extension NSTextAlignment {
+    static var trailing: NSTextAlignment {
+        isRTL ? .left : .right
     }
 }
 
@@ -446,10 +456,10 @@ public func popupBadgeRow(_ view: NSView? = nil, title: String, status: Bool? = 
     let rowView: NSView = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
     
     let labelWidth = title.widthOfString(usingFont: .systemFont(ofSize: 12, weight: .regular)) + 4
-    let labelView: LabelField = LabelField(frame: NSRect(x: 0, y: (height-16)/2, width: labelWidth, height: 16), title)
+    let labelView: LabelField = LabelField(frame: NSRect(x: isRTL ? width - labelWidth : 0, y: (height-16)/2, width: labelWidth, height: 16), title)
     
-    let badgeView = StatusBadgeView(frame: NSRect(x: rowView.frame.width - 50, y: (height-14)/2, width: 50, height: 14), status, ok: ok, notOk: notOk)
-    badgeView.autoresizingMask = [.minXMargin]
+    let badgeView = StatusBadgeView(frame: NSRect(x: isRTL ? 0 : rowView.frame.width - 50, y: (height-14)/2, width: 50, height: 14), status, ok: ok, notOk: notOk)
+    badgeView.autoresizingMask = isRTL ? [.maxXMargin] : [.minXMargin]
     
     rowView.addSubview(labelView)
     rowView.addSubview(badgeView)
@@ -472,8 +482,8 @@ public func popupRow(_ view: NSView? = nil, title: String, value: String, multil
     let rowView: NSView = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
     
     let labelWidth = title.widthOfString(usingFont: .systemFont(ofSize: 12, weight: .regular)) + 4
-    let labelView: LabelField = LabelField(frame: NSRect(x: 0, y: ((22-16)/2) + ((lines-1)*16), width: labelWidth, height: 16), title)
-    let valueView: ValueField = ValueField(frame: NSRect(x: labelWidth, y: (22-16)/2, width: rowView.frame.width - labelWidth, height: multiline ? 16*lines : 16), value)
+    let labelView: LabelField = LabelField(frame: NSRect(x: isRTL ? width - labelWidth : 0, y: ((22-16)/2) + ((lines-1)*16), width: labelWidth, height: 16), title)
+    let valueView: ValueField = ValueField(frame: NSRect(x: isRTL ? 0 : labelWidth, y: (22-16)/2, width: rowView.frame.width - labelWidth, height: multiline ? 16*lines : 16), value)
     
     if multiline {
         valueView.cell?.usesSingleLineMode = false
@@ -519,10 +529,11 @@ public func portalRow(_ v: NSStackView, title: String, value: String = "", isSel
 public func popupWithColorRow(_ view: NSView, color: NSColor, title: String, value: String) -> (ColorBlock, LabelField, ValueField) {
     let rowView: NSView = NSView(frame: NSRect(x: 0, y: 0, width: view.frame.width, height: 22))
     
-    let colorView: ColorBlock = ColorBlock(frame: NSRect(x: 3, y: 6, width: 10, height: 10), color: color)
+    let width = rowView.frame.width
+    let colorView: ColorBlock = ColorBlock(frame: NSRect(x: isRTL ? width - 13 : 3, y: 6, width: 10, height: 10), color: color)
     let labelWidth = min(180, title.widthOfString(usingFont: .systemFont(ofSize: 13, weight: .regular)) + 5)
-    let labelView: LabelField = LabelField(frame: NSRect(x: 18, y: (22-16)/2, width: labelWidth, height: 16), title)
-    let valueView: ValueField = ValueField(frame: NSRect(x: 18 + labelWidth, y: (22-16)/2, width: rowView.frame.width - labelWidth - 18, height: 16), value)
+    let labelView: LabelField = LabelField(frame: NSRect(x: isRTL ? width - 18 - labelWidth : 18, y: (22-16)/2, width: labelWidth, height: 16), title)
+    let valueView: ValueField = ValueField(frame: NSRect(x: isRTL ? 0 : 18 + labelWidth, y: (22-16)/2, width: width - labelWidth - 18, height: 16), value)
     
     rowView.addSubview(colorView)
     rowView.addSubview(labelView)
@@ -544,18 +555,13 @@ public func portalWithColorRow(_ v: NSStackView, color: NSColor, title: String) 
     view.distribution = .fillProportionally
     view.spacing = 1
     
-    let colorView: NSView = NSView()
-    colorView.widthAnchor.constraint(equalToConstant: 5).isActive = true
-    colorView.wantsLayer = true
-    colorView.layer?.backgroundColor = color.cgColor
-    colorView.layer?.cornerRadius = 2
+    let colorView: ColorBlock = ColorBlock(frame: NSRect(x: 3, y: 6, width: 10, height: 10), color: color)
     
     let labelView: LabelField = LabelField(title)
     labelView.font = NSFont.systemFont(ofSize: 11, weight: .regular)
     
     let valueView: ValueField = ValueField()
     valueView.font = NSFont.systemFont(ofSize: 12, weight: .regular)
-    valueView.widthAnchor.constraint(equalToConstant: 40).isActive = true
     
     view.addArrangedSubview(colorView)
     view.addArrangedSubview(labelView)
@@ -637,14 +643,8 @@ public extension Array where Element: Hashable {
 }
 
 public func toggleNSControlState(_ control: NSControl?, state: NSControl.StateValue) {
-    if #available(OSX 10.15, *) {
-        if let checkbox = control as? NSSwitch {
-            checkbox.state = state
-        }
-    } else {
-        if let checkbox = control as? NSButton {
-            checkbox.state = state
-        }
+    if let checkbox = control as? NSSwitch {
+        checkbox.state = state
     }
 }
 
@@ -1031,6 +1031,76 @@ public func process(path: String, arguments: [String]) -> String? {
     return output
 }
 
+public func process(path: String, arguments: [String], environment: [String: String]? = nil, timeout: TimeInterval) -> String? {
+    let task = Process()
+    task.executableURL = URL(fileURLWithPath: path)
+    task.arguments = arguments
+    if let environment {
+        task.environment = environment
+    }
+    
+    let inputPipe = Pipe()
+    let outputPipe = Pipe()
+    let errorPipe = Pipe()
+    task.standardInput = inputPipe
+    task.standardOutput = outputPipe
+    task.standardError = errorPipe
+    
+    let exited = DispatchGroup()
+    exited.enter()
+    task.terminationHandler = { _ in exited.leave() }
+    
+    do {
+        try task.run()
+    } catch let err {
+        task.terminationHandler = nil
+        exited.leave()
+        debug("\(path): \(err.localizedDescription)")
+        return nil
+    }
+    
+    var outputData = Data()
+    let drained = DispatchGroup()
+    drained.enter()
+    DispatchQueue.global(qos: .utility).async {
+        outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        drained.leave()
+    }
+    drained.enter()
+    DispatchQueue.global(qos: .utility).async {
+        _ = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        drained.leave()
+    }
+    
+    var timedOut = false
+    if exited.wait(timeout: .now() + timeout) == .timedOut {
+        timedOut = true
+        task.terminate()
+        if exited.wait(timeout: .now() + 2) == .timedOut {
+            kill(task.processIdentifier, SIGKILL)
+            _ = exited.wait(timeout: .now() + 2)
+        }
+    }
+    
+    inputPipe.fileHandleForWriting.closeFile()
+    guard drained.wait(timeout: .now() + 2) == .success else {
+        error("\(path) did not exit within \(Int(timeout))s and could not be killed")
+        return nil
+    }
+    outputPipe.fileHandleForReading.closeFile()
+    errorPipe.fileHandleForReading.closeFile()
+    
+    if timedOut {
+        error("\(path) did not exit within \(Int(timeout))s, terminated")
+        return nil
+    }
+    
+    let output = String(data: outputData, encoding: .utf8)
+    guard let output, !output.isEmpty else { return nil }
+    
+    return output
+}
+
 public class SettingsContainerView: NSStackView {
     public init() {
         super.init(frame: NSRect.zero)
@@ -1161,7 +1231,7 @@ public class SMCHelper {
         return self.connection != nil
     }
     
-    public func checkForUpdate(completion: @escaping () -> Void = {}) {
+    public func checkForUpdate(hostAppUpdated: Bool = false, completion: @escaping () -> Void = {}) {
         let lock = NSLock()
         var completed = false
         let finish = {
@@ -1179,13 +1249,26 @@ public class SMCHelper {
 
         if #available(macOS 13, *) {
             self.cleanupLegacyInstall()
-            guard SMAppService.daemon(plistName: self.plistName).status == .enabled else {
+            let service = SMAppService.daemon(plistName: self.plistName)
+            guard service.status == .enabled else {
                 finish()
+                return
+            }
+            if hostAppUpdated {
+                print("host app update detected, refreshing SMC helper registration")
+                self.registerModernService(replacingExisting: true) { state in
+                    if case .enabled = state {
+                        print("SMC helper registration was refreshed successfully")
+                    } else {
+                        print("failed to refresh SMC helper registration")
+                    }
+                    finish()
+                }
                 return
             }
         }
         
-        let helperURL = Bundle.main.bundleURL.appendingPathComponent("Contents/Library/LaunchServices/eu.exelban.Stats.SMC.Helper")
+        let helperURL = Bundle.main.bundleURL.appendingPathComponent("Contents/Library/LaunchServices/\(self.id)")
         guard let helperBundleInfo = CFBundleCopyInfoDictionaryForURL(helperURL as CFURL) as? [String: Any],
               let helperVersion = helperBundleInfo["CFBundleShortVersionString"] as? String,
               let helper = self.helper({ connected in
@@ -1217,51 +1300,75 @@ public class SMCHelper {
     public func install(completion: @escaping (_ state: SMCHelperInstallState) -> Void) {
         if #available(macOS 13, *) {
             self.cleanupLegacyInstall()
-            let service = SMAppService.daemon(plistName: self.plistName)
-            if service.status == .enabled {
+            self.registerModernService(replacingExisting: false, completion: completion)
+            return
+        }
+
+        self.installLegacy(completion: completion)
+    }
+
+    @available(macOS 13, *)
+    private func registerModernService(
+        replacingExisting: Bool,
+        completion: @escaping (_ state: SMCHelperInstallState) -> Void
+    ) {
+        let service = SMAppService.daemon(plistName: self.plistName)
+        if service.status == .enabled {
+            guard replacingExisting else {
                 completion(.enabled)
                 return
             }
-            
+
+            self.connection?.invalidationHandler = nil
+            self.connection?.invalidate()
+            self.connection = nil
+            service.unregister { error in
+                DispatchQueue.main.async {
+                    if let error {
+                        print("failed to unregister outdated SMC helper daemon: \(error.localizedDescription)")
+                        completion(.failed)
+                        return
+                    }
+                    self.registerModernService(replacingExisting: false, completion: completion)
+                }
+            }
+            return
+        }
+
+        do {
+            try service.register()
+        } catch {
+            print("failed to register SMC helper daemon: \(error.localizedDescription)")
+            if service.status == .requiresApproval {
+                print("SMC helper requires approval in System Settings > Login Items")
+                completion(.requiresApproval)
+                return
+            }
+            print("resetting and retrying")
+            try? service.unregister()
             do {
                 try service.register()
             } catch {
-                print("failed to register SMC helper daemon: \(error.localizedDescription)")
+                print("failed to register SMC helper daemon after reset: \(error.localizedDescription)")
                 if service.status == .requiresApproval {
                     print("SMC helper requires approval in System Settings > Login Items")
                     completion(.requiresApproval)
                     return
                 }
-                print("resetting and retrying")
-                try? service.unregister()
-                do {
-                    try service.register()
-                } catch {
-                    print("failed to register SMC helper daemon after reset: \(error.localizedDescription)")
-                    if service.status == .requiresApproval {
-                        print("SMC helper requires approval in System Settings > Login Items")
-                        completion(.requiresApproval)
-                        return
-                    }
-                    completion(.failed)
-                    return
-                }
-            }
-            
-            switch service.status {
-            case .enabled:
-                completion(.enabled)
-            case .requiresApproval:
-                print("SMC helper requires approval in System Settings > Login Items")
-                completion(.requiresApproval)
-            default:
                 completion(.failed)
+                return
             }
-            
-            return
         }
-        
-        self.installLegacy(completion: completion)
+
+        switch service.status {
+        case .enabled:
+            completion(.enabled)
+        case .requiresApproval:
+            print("SMC helper requires approval in System Settings > Login Items")
+            completion(.requiresApproval)
+        default:
+            completion(.failed)
+        }
     }
     
     @available(macOS 13, *)
@@ -1419,7 +1526,9 @@ public class SMCHelper {
 }
 
 internal func grayscaleImage(_ image: NSImage) -> NSImage? {
-    guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+    let scale = NSScreen.main?.backingScaleFactor ?? 2
+    let hints: [NSImageRep.HintKey: Any] = [.ctm: AffineTransform(scale: scale)]
+    guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: hints) else {
         return nil
     }
     let bitmap = NSBitmapImageRep(cgImage: cgImage)
@@ -1427,6 +1536,7 @@ internal func grayscaleImage(_ image: NSImage) -> NSImage? {
     guard let grayscale = bitmap.converting(to: .genericGray, renderingIntent: .default) else {
         return nil
     }
+    grayscale.size = image.size
     let greyImage = NSImage(size: image.size)
     greyImage.addRepresentation(grayscale)
     
@@ -1598,14 +1708,7 @@ public class AppIcon: NSView {
 }
 
 public func controlState(_ sender: NSControl) -> Bool {
-    var state: NSControl.StateValue
-    
-    if #available(OSX 10.15, *) {
-        state = sender is NSSwitch ? (sender as! NSSwitch).state : .off
-    } else {
-        state = sender is NSButton ? (sender as! NSButton).state : .off
-    }
-    
+    let state: NSControl.StateValue = sender is NSSwitch ? (sender as! NSSwitch).state : .off
     return state == .on
 }
 
@@ -2066,7 +2169,18 @@ public class HelpHUD: NSPanel {
         if self.contentView as? WKWebView == nil {
             let webView = WKWebView()
             webView.underPageBackgroundColor = .clear
-            webView.loadHTMLString("<html><body style='color: #ffffff;margin: 10px;'>\(self.text)</body></html>", baseURL: nil)
+            let style = """
+            :root { color-scheme: light dark; }
+            body {
+                margin: 10px;
+                font-family: -apple-system, 'Helvetica Neue', sans-serif;
+                color: #000000;
+            }
+            @media (prefers-color-scheme: dark) {
+                body { color: #ffffff; }
+            }
+            """
+            webView.loadHTMLString("<html><head><style>\(style)</style></head><body>\(self.text)</body></html>", baseURL: nil)
             self.contentView = webView
         }
         
@@ -2105,9 +2219,9 @@ public class CPUeStressTest {
         let efficientCoreCount: Int = Int(SystemKit.shared.device.info.cpu?.eCores ?? 2)
         self.workers.removeAll()
         
-        for index in 0..<efficientCoreCount {
+        for _ in 0..<efficientCoreCount {
             let worker = DispatchWorkItem { [weak self] in
-                self?.test(threadIndex: index)
+                self?.test()
             }
             self.workers.append(worker)
             self.queue.async(execute: worker)
@@ -2120,7 +2234,7 @@ public class CPUeStressTest {
         self.workers.removeAll()
     }
     
-    private func test(threadIndex: Int) {
+    private func test() {
         pthread_set_qos_class_self_np(QOS_CLASS_BACKGROUND, 0)
         var x: Double = 1.0
         while self.isRunning {
@@ -2146,9 +2260,9 @@ public class CPUpStressTest {
         let performanceCoreCount: Int = Int(SystemKit.shared.device.info.cpu?.pCores ?? 4)
         self.workers.removeAll()
         
-        for index in 0..<performanceCoreCount {
+        for _ in 0..<performanceCoreCount {
             let worker = DispatchWorkItem { [weak self] in
-                self?.test(threadIndex: index)
+                self?.test()
             }
             self.workers.append(worker)
             self.queue.async(execute: worker)
@@ -2161,7 +2275,7 @@ public class CPUpStressTest {
         self.workers.removeAll()
     }
     
-    private func test(threadIndex: Int) {
+    private func test() {
         pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0)
         var x: Double = 1.0
         while self.isRunning {

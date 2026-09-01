@@ -72,36 +72,46 @@ extension AppDelegate {
         }
     }
     
-    internal func parseVersion() {
-        let key = "version"
+    internal func parseVersion() -> Bool {
+        let versionKey = "version"
+        let buildKey = "version-build"
         let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as! String
-        guard let updateInterval = AppUpdateInterval(rawValue: Store.shared.string(key: "update-interval", defaultValue: AppUpdateInterval.silent.rawValue)) else {
-            return
-        }
+        let currentBuild = Bundle.main.object(forInfoDictionaryKey: kCFBundleVersionKey as String) as! String
         
-        if !Store.shared.exist(key: key) {
+        if !Store.shared.exist(key: versionKey) {
             Store.shared.reset()
-            debug("Previous version not detected. Current version (\(currentVersion) set")
-        } else {
-            let prevVersion = Store.shared.string(key: key, defaultValue: "")
-            if prevVersion == currentVersion {
-                return
-            }
-            
-            if updateInterval != .silent && isNewestVersion(currentVersion: prevVersion, latestVersion: currentVersion) {
-                let title: String = localizedString("Successfully updated")
-                let subtitle: String = localizedString("Stats was updated to v", currentVersion)
-                
-                let id = showNotification(title: title, subtitle: subtitle, delegate: self)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-                    removeNotification(id)
-                }
-            }
-            
-            debug("Detected previous version \(prevVersion). Current version (\(currentVersion) set")
+            Store.shared.set(key: versionKey, value: currentVersion)
+            Store.shared.set(key: buildKey, value: currentBuild)
+            debug("Previous version not detected. Current version (\(currentVersion)) set")
+            return false
         }
-        
-        Store.shared.set(key: key, value: currentVersion)
+
+        let previousVersion = Store.shared.string(key: versionKey, defaultValue: "")
+        let previousBuild = Store.shared.string(key: buildKey, defaultValue: "")
+        let versionUpdated = previousVersion != currentVersion
+        let buildUpdated = previousBuild != currentBuild
+        guard versionUpdated || buildUpdated else { return false }
+
+        let updateInterval = AppUpdateInterval(
+            rawValue: Store.shared.string(key: "update-interval", defaultValue: AppUpdateInterval.silent.rawValue)
+        )
+        if versionUpdated,
+           let updateInterval,
+           updateInterval != .silent,
+           isNewestVersion(currentVersion: previousVersion, latestVersion: currentVersion) {
+            let title: String = localizedString("Successfully updated")
+            let subtitle: String = localizedString("Stats was updated to v", currentVersion)
+
+            let id = showNotification(title: title, subtitle: subtitle, delegate: self)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                removeNotification(id)
+            }
+        }
+
+        debug("Detected previous version \(previousVersion) (\(previousBuild)). Current version \(currentVersion) (\(currentBuild)) set")
+        Store.shared.set(key: versionKey, value: currentVersion)
+        Store.shared.set(key: buildKey, value: currentBuild)
+        return true
     }
     
     internal func defaultValues() {

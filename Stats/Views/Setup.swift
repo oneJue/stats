@@ -289,7 +289,7 @@ private class SetupView_preset: NSStackView {
         container.alignment = .leading
         
         let message: NSTextField = TextView(frame: NSRect(x: 0, y: 0, width: setupSize.width - 80, height: 16))
-        message.alignment = .left
+        message.alignment = .natural
         message.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         message.textColor = .secondaryLabelColor
         message.stringValue = localizedString("select_preset_message")
@@ -624,6 +624,9 @@ private class SetupView_end: NSStackView {
         support.spacing = 12
         support.orientation = .horizontal
         
+        let systemStats = SupportButtonView(name: "System Stats", image: "AppIcon", action: {
+            NSWorkspace.shared.open(URL(string: "https://www.system-stats.com")!)
+        })
         let github = SupportButtonView(name: "GitHub Sponsors", image: "github", action: {
             NSWorkspace.shared.open(URL(string: "https://github.com/sponsors/exelban")!)
         })
@@ -637,6 +640,7 @@ private class SetupView_end: NSStackView {
             NSWorkspace.shared.open(URL(string: "https://patreon.com/exelban")!)
         })
         
+        support.addArrangedSubview(systemStats)
         support.addArrangedSubview(github)
         support.addArrangedSubview(paypal)
         support.addArrangedSubview(koFi)

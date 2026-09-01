@@ -57,15 +57,11 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
         
         NotificationCenter.default.addObserver(self, selector: #selector(listenForOneView), name: .toggleOneView, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(listenForModuleRearrrange), name: .moduleRearrange, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(listenCombinedModulesPopup), name: .combinedModulesPopup, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(listenForModule), name: .toggleModule, object: nil)
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self, name: .toggleOneView, object: nil)
         NotificationCenter.default.removeObserver(self, name: .moduleRearrange, object: nil)
-        NotificationCenter.default.removeObserver(self, name: .combinedModulesPopup, object: nil)
-        NotificationCenter.default.removeObserver(self, name: .toggleModule, object: nil)
     }
     
     public func enable() {
@@ -77,26 +73,9 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
         self.menuBarItem?.button?.image = NSImage()
         self.menuBarItem?.button?.toolTip = localizedString("Combined modules")
         
-        if !self.combinedModulesPopup {
-            self.activeModules.forEach { (m: Module) in
-                m.menuBar.widgets.forEach { w in
-                    w.item.onClick = {
-                        if let window = w.item.window {
-                            NotificationCenter.default.post(name: .togglePopup, object: nil, userInfo: [
-                                "module": m.name,
-                                "widget": w.type,
-                                "origin": window.frame.origin,
-                                "center": window.frame.width/2
-                            ])
-                        }
-                    }
-                }
-            }
-        } else {
-            self.menuBarItem?.button?.target = self
-            self.menuBarItem?.button?.action = #selector(self.togglePopup)
-            self.menuBarItem?.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
-        }
+        self.menuBarItem?.button?.target = self
+        self.menuBarItem?.button?.action = #selector(self.handleClick)
+        self.menuBarItem?.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
         
         DispatchQueue.main.async(execute: {
             self.recalculate()
@@ -104,11 +83,6 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     }
     
     public func disable() {
-        self.activeModules.forEach { (m: Module) in
-            m.menuBar.widgets.forEach { w in
-                w.item.onClick = nil
-            }
-        }
         if let item = self.menuBarItem {
             NSStatusBar.system.removeStatusItem(item)
         }
@@ -117,17 +91,14 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     
     private func recalculate() {
         self.view.subviews.forEach({ $0.removeFromSuperview() })
-
+        
         let visibleModules = self.activeModules.filter({ !$0.menuBar.activeWidgets.isEmpty })
         var w: CGFloat = 0
         visibleModules.enumerated().forEach { (i, m) in
             if i != 0 {
                 w += self.spacing
                 if self.separator {
-                    let separator = NSView(frame: NSRect(x: w, y: 3, width: 1, height: Constants.Widget.height-6))
-                    separator.wantsLayer = true
-                    separator.layer?.backgroundColor = (separator.isDarkMode ? NSColor.white : NSColor.black).cgColor
-                    self.view.addSubview(separator)
+                    self.view.addSubview(SeparatorLineView(frame: NSRect(x: w, y: 3, width: 1, height: Constants.Widget.height-6)))
                     w += 3 + self.spacing
                 }
             }
@@ -142,7 +113,34 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     // call when popup appear/disappear
     private func visibilityCallback(_ state: Bool) {}
     
-    @objc private func togglePopup(_ sender: NSButton) {
+    @objc private func handleClick() {
+        if self.combinedModulesPopup {
+            self.togglePopup()
+        } else {
+            self.openModulePopup()
+        }
+    }
+    
+    private func openModulePopup() {
+        guard let window = self.menuBarItem?.button?.window else { return }
+        let location = self.view.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        let visibleModules = self.activeModules.filter({ !$0.menuBar.activeWidgets.isEmpty })
+        guard let module = visibleModules.last(where: { $0.menuBar.view.frame.minX <= location.x }) ?? visibleModules.first else { return }
+        
+        var userInfo: [String: Any] = [
+            "module": module.name,
+            "origin": window.frame.origin,
+            "center": window.frame.width/2
+        ]
+        let widgetLocation = module.menuBar.view.convert(location, from: self.view)
+        let widgets = module.menuBar.activeWidgets
+        if let widget = widgets.last(where: { $0.item.frame.minX <= widgetLocation.x }) ?? widgets.first {
+            userInfo["widget"] = widget.type
+        }
+        NotificationCenter.default.post(name: .togglePopup, object: nil, userInfo: userInfo)
+    }
+    
+    private func togglePopup() {
         guard let popup = self.popup, let item = self.menuBarItem, let window = item.button?.window else { return }
         let openedWindows = NSApplication.shared.windows.filter{ $0 is NSPanel }
         openedWindows.forEach{ $0.setIsVisible(false) }
@@ -186,55 +184,27 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
     @objc private func listenForModuleRearrrange() {
         self.recalculate()
     }
+}
+
+private class SeparatorLineView: NSView {
+    override var wantsUpdateLayer: Bool { true }
     
-    @objc private func listenCombinedModulesPopup() {
-        if !self.combinedModulesPopup {
-            self.activeModules.forEach { (m: Module) in
-                m.menuBar.widgets.forEach { w in
-                    w.item.onClick = {
-                        if let window = w.item.window {
-                            NotificationCenter.default.post(name: .togglePopup, object: nil, userInfo: [
-                                "module": m.name,
-                                "widget": w.type,
-                                "origin": window.frame.origin,
-                                "center": window.frame.width/2
-                            ])
-                        }
-                    }
-                }
-            }
-            self.menuBarItem?.button?.action = nil
-        } else {
-            self.activeModules.forEach { (m: Module) in
-                m.menuBar.widgets.forEach { w in
-                    w.item.onClick = nil
-                }
-            }
-            
-            self.menuBarItem?.button?.target = self
-            self.menuBarItem?.button?.action = #selector(self.togglePopup)
-            self.menuBarItem?.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
-        }
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        self.wantsLayer = true
     }
     
-    @objc private func listenForModule(_ notification: Notification) {
-        guard let name = notification.userInfo?["module"] as? String,
-              let state = notification.userInfo?["state"] as? Bool,
-              state,
-              let module = self.activeModules.first(where: { $0.name == name }) else { return }
-        
-        module.menuBar.widgets.forEach { w in
-            w.item.onClick = {
-                if let window = w.item.window {
-                    NotificationCenter.default.post(name: .togglePopup, object: nil, userInfo: [
-                        "module": module.name,
-                        "widget": w.type,
-                        "origin": window.frame.origin,
-                        "center": window.frame.width/2
-                    ])
-                }
-            }
-        }
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func updateLayer() {
+        self.layer?.backgroundColor = (self.isDarkMode ? NSColor.white : NSColor.black).cgColor
+    }
+    
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        self.needsDisplay = true
     }
 }
 
@@ -252,7 +222,7 @@ private class Popup: NSStackView, Popup_p {
         self.orientation = .vertical
         self.distribution = .fill
         self.alignment = .width
-        self.spacing = Constants.Popup.spacing
+        self.spacing = Constants.Popup.spacing*3
         
         self.reinit()
         
@@ -316,7 +286,8 @@ private class Popup: NSStackView, Popup_p {
         label.font = .menuFont(ofSize: 0)
         label.lineBreakMode = .byTruncatingTail
         row.addArrangedSubview(label)
-        row.addArrangedSubview(NSView())  // flexible spacer
+        let spacer = NSView()
+        row.addArrangedSubview(spacer)
         row.addArrangedSubview(control)
         return row
     }
@@ -334,19 +305,20 @@ private class Popup: NSStackView, Popup_p {
         self.subviews.forEach({ $0.removeFromSuperview() })
 
         let availableModules = modules.filter({ $0.enabled && $0.portal != nil })
+        var modulesHeight: CGFloat = 0
         availableModules.forEach { (m: Module) in
             if let p = m.portal {
+                modulesHeight += p.height
                 self.addArrangedSubview(p)
             }
         }
 
         self.addArrangedSubview(self.buildPowerSection())
 
-        let moduleCount = availableModules.count
-        let moduleH = CGFloat(moduleCount) * Constants.Popup.portalHeight + CGFloat(max(0, moduleCount - 1)) * Constants.Popup.spacing
-        let extra: CGFloat = moduleCount > 0 ? Constants.Popup.spacing : 0
-        let h = moduleH + extra + self.powerSectionHeight
-        self.setFrameSize(NSSize(width: self.frame.width, height: h))
+        let modulesSpacing = CGFloat(max(0, availableModules.count - 1)) * self.spacing
+        let powerSpacing = availableModules.isEmpty ? 0 : self.spacing
+        let height = modulesHeight + modulesSpacing + powerSpacing + self.powerSectionHeight
+        self.setFrameSize(NSSize(width: self.frame.width, height: height))
         self.sizeCallback?(self.frame.size)
     }
 }

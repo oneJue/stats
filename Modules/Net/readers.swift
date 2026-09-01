@@ -107,18 +107,60 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
         set { self.variablesQueue.sync { self._usage = newValue } }
     }
     
+    private let virtualInterfacePrefixes = ["utun", "ipsec", "ppp", "tun", "tap", "gif", "stf", "wg"]
+    
     private var primaryInterface: String {
         get {
-            if let global = SCDynamicStoreCopyValue(nil, "State:/Network/Global/IPv4" as CFString), let name = global["PrimaryInterface"] as? String {
-                return name
+            guard let global = SCDynamicStoreCopyValue(nil, "State:/Network/Global/IPv4" as CFString), let name = global["PrimaryInterface"] as? String else {
+                return ""
             }
-            return ""
+            if self.isVirtualInterface(name), let physical = self.physicalInterface() {
+                return physical
+            }
+            return name
         }
     }
     
     private var interfaceID: String {
         get { Store.shared.string(key: "Network_interface", defaultValue: self.primaryInterface) }
         set { Store.shared.set(key: "Network_interface", value: newValue) }
+    }
+    private var lastInterfaceID: String = ""
+    
+    private func isVirtualInterface(_ name: String) -> Bool {
+        return self.virtualInterfacePrefixes.contains(where: { name.hasPrefix($0) })
+    }
+    
+    private func physicalInterface() -> String? {
+        if let setup = SCDynamicStoreCopyValue(nil, "Setup:/Network/Global/IPv4" as CFString), let order = setup["ServiceOrder"] as? [String] {
+            for serviceID in order {
+                guard let service = SCDynamicStoreCopyValue(nil, "State:/Network/Service/\(serviceID)/IPv4" as CFString) as? [String: Any],
+                      service["Router"] != nil, let name = service["InterfaceName"] as? String, !self.isVirtualInterface(name) else {
+                    continue
+                }
+                return name
+            }
+        }
+        
+        var interfaceAddresses: UnsafeMutablePointer<ifaddrs>? = nil
+        guard getifaddrs(&interfaceAddresses) == 0 else { return nil }
+        defer { freeifaddrs(interfaceAddresses) }
+        
+        var pointer = interfaceAddresses
+        while let current = pointer {
+            defer { pointer = current.pointee.ifa_next }
+            let flags = Int32(current.pointee.ifa_flags)
+            guard flags & IFF_UP != 0, flags & IFF_RUNNING != 0, flags & IFF_LOOPBACK == 0, flags & IFF_POINTOPOINT == 0,
+                  let addr = current.pointee.ifa_addr, addr.pointee.sa_family == UInt8(AF_INET) else {
+                continue
+            }
+            let name = String(cString: current.pointee.ifa_name)
+            if !self.isVirtualInterface(name) {
+                return name
+            }
+        }
+        
+        return nil
     }
     
     private var reader: String {
@@ -217,6 +259,14 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
     
     public override func read() {
         self.checkUsageReset()
+        
+        let interfaceID = self.interfaceID
+        if interfaceID != self.lastInterfaceID {
+            self.lastInterfaceID = interfaceID
+            self.usage.bandwidth = Bandwidth()
+            self.lastDetailsReadTS = .distantPast
+        }
+        
         self.requestDetails()
         
         let current: Bandwidth
@@ -321,44 +371,15 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
     }
     
     private func readProcessBandwidth() -> Bandwidth {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/nettop")
-        task.arguments = ["-P", "-L", "1", "-n", "-k", "time,interface,state,rx_dupe,rx_ooo,re-tx,rtt_avg,rcvsize,tx_win,tc_class,tc_mgt,cc_algo,P,C,R,W,arch"]
-        task.environment = [
-            "NSUnbufferedIO": "YES",
-            "LC_ALL": "en_US.UTF-8"
-        ]
-        
-        let inputPipe = Pipe()
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        
-        task.standardInput = inputPipe
-        task.standardOutput = outputPipe
-        task.standardError = errorPipe
-        
-        defer {
-            if task.isRunning {
-                task.terminate()
-            }
-            task.waitUntilExit()
-            inputPipe.fileHandleForWriting.closeFile()
-            outputPipe.fileHandleForReading.closeFile()
-            errorPipe.fileHandleForReading.closeFile()
-        }
-        
-        do {
-            try task.run()
-        } catch let err {
-            error("read bandwidth from processes: \(err)", log: self.log)
-            return Bandwidth()
-        }
-        
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: outputData, encoding: .utf8)
-        _ = String(data: errorData, encoding: .utf8)
-        guard let output, !output.isEmpty else { return Bandwidth() }
+        guard let output = process(
+            path: "/usr/bin/nettop",
+            arguments: ["-P", "-L", "1", "-n", "-k", "time,interface,state,rx_dupe,rx_ooo,re-tx,rtt_avg,rcvsize,tx_win,tc_class,tc_mgt,cc_algo,P,C,R,W,arch"],
+            environment: [
+                "NSUnbufferedIO": "YES",
+                "LC_ALL": "en_US.UTF-8"
+            ],
+            timeout: 5
+        ) else { return Bandwidth() }
         
         var totalUpload: Int64 = 0
         var totalDownload: Int64 = 0
@@ -403,12 +424,15 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
         let now = Date()
         if now.timeIntervalSince(self.lastDetailsReadTS) < 15 { return }
         
+        let interfaceID = self.interfaceID
+        var found = false
         for interface in SCNetworkInterfaceCopyAll() as NSArray {
-            if let bsdName = SCNetworkInterfaceGetBSDName(interface as! SCNetworkInterface), bsdName as String == self.interfaceID,
+            if let bsdName = SCNetworkInterfaceGetBSDName(interface as! SCNetworkInterface), bsdName as String == interfaceID,
                let type = SCNetworkInterfaceGetInterfaceType(interface as! SCNetworkInterface),
                let displayName = SCNetworkInterfaceGetLocalizedDisplayName(interface as! SCNetworkInterface),
                let address = SCNetworkInterfaceGetHardwareAddressString(interface as! SCNetworkInterface) {
                 self.usage.interface = Network_interface(displayName: displayName as String, BSDName: bsdName as String, address: address as String)
+                found = true
                 
                 switch type {
                 case kSCNetworkInterfaceTypeEthernet:
@@ -425,7 +449,7 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
         
         if let prefs = SCPreferencesCreate(nil, "Stats" as CFString, nil), let services = SCNetworkServiceCopyAll(prefs) as? [SCNetworkService] {
             for service in services {
-                if let interface = SCNetworkServiceGetInterface(service), let name = SCNetworkInterfaceGetBSDName(interface), name as String == self.interfaceID,
+                if let interface = SCNetworkServiceGetInterface(service), let name = SCNetworkInterfaceGetBSDName(interface), name as String == interfaceID,
                    let serviceID = SCNetworkServiceGetServiceID(service) {
                     let key = "State:/Network/Service/\(serviceID)/DNS" as CFString
                     if let settings = SCDynamicStoreCopyValue(nil, key) as? [String: Any] {
@@ -435,7 +459,13 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
             }
         }
         
-        guard self.usage.interface != nil else { return }
+        guard found else {
+            self.usage.interface = nil
+            self.usage.connectionType = nil
+            self.usage.wifiDetails.reset()
+            self.lastDetailsReadTS = Date()
+            return
+        }
         
         if self.usage.connectionType != .wifi {
             self.usage.wifiDetails.reset()
@@ -510,41 +540,7 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
     }
     
     private func systemProfilerAirport(timeout: TimeInterval) -> String? {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
-        task.arguments = ["SPAirPortDataType", "-json"]
-        
-        let outputPipe = Pipe()
-        task.standardOutput = outputPipe
-        task.standardError = Pipe()
-        
-        do {
-            try task.run()
-        } catch let err {
-            error("read SPAirPortDataType: \(err)", log: self.log)
-            return nil
-        }
-        
-        var output: String?
-        let group = DispatchGroup()
-        group.enter()
-        DispatchQueue.global(qos: .utility).async {
-            let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-            output = String(data: data, encoding: .utf8)
-            group.leave()
-        }
-        
-        if group.wait(timeout: .now() + timeout) == .timedOut {
-            if task.isRunning {
-                task.terminate()
-            }
-            error("SPAirPortDataType timed out after \(Int(timeout))s, terminating", log: self.log)
-            return nil
-        }
-        
-        task.waitUntilExit()
-        guard let output, !output.isEmpty else { return nil }
-        return output
+        return process(path: "/usr/sbin/system_profiler", arguments: ["SPAirPortDataType", "-json"], timeout: timeout)
     }
     
     private func getLocalIP(_ pointer: UnsafeMutablePointer<ifaddrs>) {
@@ -727,44 +723,15 @@ public class ProcessReader: Reader<[Network_Process]> {
             return
         }
         
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/nettop")
-        task.arguments = ["-P", "-L", "1", "-n", "-k", "time,interface,state,rx_dupe,rx_ooo,re-tx,rtt_avg,rcvsize,tx_win,tc_class,tc_mgt,cc_algo,P,C,R,W,arch"]
-        task.environment = [
-            "NSUnbufferedIO": "YES",
-            "LC_ALL": "en_US.UTF-8"
-        ]
-        
-        let inputPipe = Pipe()
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        
-        task.standardInput = inputPipe
-        task.standardOutput = outputPipe
-        task.standardError = errorPipe
-        
-        defer {
-            if task.isRunning {
-                task.terminate()
-            }
-            task.waitUntilExit()
-            inputPipe.fileHandleForWriting.closeFile()
-            outputPipe.fileHandleForReading.closeFile()
-            errorPipe.fileHandleForReading.closeFile()
-        }
-        
-        do {
-            try task.run()
-        } catch let error {
-            print(error)
-            return
-        }
-        
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: outputData, encoding: .utf8)
-        _ = String(data: errorData, encoding: .utf8)
-        guard let output, !output.isEmpty else { return }
+        guard let output = process(
+            path: "/usr/bin/nettop",
+            arguments: ["-P", "-L", "1", "-n", "-k", "time,interface,state,rx_dupe,rx_ooo,re-tx,rtt_avg,rcvsize,tx_win,tc_class,tc_mgt,cc_algo,P,C,R,W,arch"],
+            environment: [
+                "NSUnbufferedIO": "YES",
+                "LC_ALL": "en_US.UTF-8"
+            ],
+            timeout: 5
+        ) else { return }
         
         var list: [Network_Process] = []
         var firstLine = false
