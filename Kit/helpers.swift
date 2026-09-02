@@ -1193,13 +1193,49 @@ public class SMCHelper {
         helper.version { installedHelperVersion in
             guard installedHelperVersion != helperVersion else { return }
             print("new version of SMC helper is detected (\(installedHelperVersion) -> \(helperVersion)), going to update...")
+
+            if #available(macOS 13, *) {
+                self.updateModernService()
+                return
+            }
+
             self.uninstall(silent: true)
-            self.install { state in
-                if case .enabled = state {
-                    print("the new version of SMC helper was successfully installed")
-                } else {
-                    print("error when installing a new version of the SMC helper")
+            self.installHelperUpdate()
+        }
+    }
+
+    @available(macOS 13, *)
+    private func updateModernService() {
+        self.resetFanModes()
+        let service = SMAppService.daemon(plistName: self.plistName)
+        service.unregister { error in
+            DispatchQueue.main.async {
+                if let error {
+                    print("failed to unregister the outdated SMC helper: \(error.localizedDescription)")
+                    return
                 }
+
+                self.connection?.invalidationHandler = nil
+                self.connection?.invalidate()
+                self.connection = nil
+                self.installHelperUpdate()
+            }
+        }
+    }
+
+    private func resetFanModes() {
+        guard let count = SMC.shared.getValue("FNum") else { return }
+        for i in 0..<Int(count) {
+            self.setFanMode(i, mode: 0)
+        }
+    }
+
+    private func installHelperUpdate() {
+        self.install { state in
+            if case .enabled = state {
+                print("the new version of SMC helper was successfully installed")
+            } else {
+                print("error when installing a new version of the SMC helper")
             }
         }
     }
@@ -1347,11 +1383,7 @@ public class SMCHelper {
     }
     
     public func uninstall(silent: Bool = false) {
-        if let count = SMC.shared.getValue("FNum") {
-            for i in 0..<Int(count) {
-                self.setFanMode(i, mode: 0)
-            }
-        }
+        self.resetFanModes()
         if #available(macOS 13, *) {
             do {
                 try SMAppService.daemon(plistName: self.plistName).unregister()
