@@ -1,5 +1,9 @@
 # Stats
 
+This is the **oneJue custom build** of Stats, with controls for keeping the screen awake and preventing sleep when the lid is closed. Fork releases use their own version numbers: v3.1.0 incorporates upstream v3.0.16 and subsequent fixes through `aab2e1b`.
+
+Updates and release notes come from [oneJue/stats](https://github.com/oneJue/stats/releases), preserving the custom power controls across updates. Lid sleep prevention requires the app and its privileged helper to be signed with the same certificate and the helper to be approved in System Settings.
+
 <a href="https://github.com/exelban/stats/releases"><p align="center"><img src="https://github.com/exelban/stats/raw/master/Stats/Supporting%20Files/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" width="120"></p></a>
 
 [![Stats](https://cdn.mac-stats.com/assets/images/menus.png)](https://github.com/exelban/stats/releases)
@@ -9,14 +13,11 @@ macOS system monitor in your menu bar
 
 ## Installation
 ### Manual
-You can download the latest version [here](https://github.com/exelban/stats/releases/latest/download/Stats.dmg).
+You can download the latest custom version [here](https://github.com/oneJue/stats/releases/latest/download/Stats.dmg).
 This will download a file called `Stats.dmg`. Open it and move the app to the application folder.
 
 ### Homebrew
-To install it using Homebrew, open the Terminal app and type:
-```bash
-brew install stats
-```
+The Homebrew `stats` cask installs the upstream application. Use this fork's release downloads for the custom power controls.
 
 ### Uninstall
 Run the uninstall script bundled with the app (requires administrator privileges to remove the SMC helper):

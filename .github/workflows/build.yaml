@@ -1,6 +1,7 @@
 name: build
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - master
@@ -12,10 +13,38 @@ concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: macos-15
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
-      - run: xcodebuild -scheme Stats -destination 'platform=macOS' -configuration Release archive CODE_SIGNING_ALLOWED=NO
+      - name: Test
+        run: >-
+          xcodebuild test -scheme Stats -destination 'platform=macOS'
+          -configuration Debug -derivedDataPath build/tests
+          -resultBundlePath build/TestResults.xcresult
+          CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
+      - name: Build universal app
+        run: >-
+          xcodebuild archive -scheme Stats -destination 'generic/platform=macOS'
+          -configuration Release -archivePath build/Stats.xcarchive
+          ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO
+      - name: Package build for signing
+        run: >-
+          ditto -c -k --sequesterRsrc --keepParent
+          build/Stats.xcarchive/Products/Applications/Stats.app build/Stats-unsigned.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Stats-unsigned-${{ github.sha }}
+          path: build/Stats-unsigned.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ github.sha }}
+          path: build/TestResults.xcresult
