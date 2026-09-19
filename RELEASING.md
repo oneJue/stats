@@ -15,7 +15,7 @@ Configure these repository Actions secrets before running `release`:
 
 Keep private keys and passwords in Actions secrets, never in the repository or release assets. The runner imports the identity into a temporary keychain and removes it after the job.
 
-Before a release, update the app's `MARKETING_VERSION`, app and widget build numbers, and `RELEASE_NOTES.md`. Run the `release` workflow from the commit to publish, with the matching version (for example `3.1.0`). It creates the `v3.1.0` tag at that commit after verification succeeds. Existing release tags must not be moved.
+Before a release, update the app's `MARKETING_VERSION`, app and widget build numbers, and `RELEASE_NOTES.md`. Run the `release` workflow from the commit to publish, with the matching version (for example `3.1.0`). It creates the `v3.1.0` tag at that commit after verification succeeds, publishing a prepared draft if one exists. Already-published releases are rejected; existing release tags must not be moved.
 
 The app, helper, and SMC tool must share a certificate. The signing team supplied to Xcode also configures the legacy helper authorization requirements and the app/widget preferences group. Do not disable these checks to make an unsigned build control privileged power settings.
 

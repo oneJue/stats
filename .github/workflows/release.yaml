@@ -112,9 +112,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v$RELEASE_VERSION" --target "$GITHUB_SHA" \
-            --title "Stats $RELEASE_VERSION (oneJue custom)" \
-            --notes-file RELEASE_NOTES.md build/Stats.dmg build/SHA256SUMS.txt
+          tag="v$RELEASE_VERSION"
+          if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [[ "$draft" != true ]]; then
+              echo "::error::Release $tag is already published. Use a new version."
+              exit 1
+            fi
+            gh release upload "$tag" build/Stats.dmg build/SHA256SUMS.txt --clobber
+            gh release edit "$tag" --target "$GITHUB_SHA" --draft=false \
+              --title "Stats $RELEASE_VERSION (oneJue custom)" --notes-file RELEASE_NOTES.md
+          else
+            gh release create "$tag" --target "$GITHUB_SHA" \
+              --title "Stats $RELEASE_VERSION (oneJue custom)" \
+              --notes-file RELEASE_NOTES.md build/Stats.dmg build/SHA256SUMS.txt
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:

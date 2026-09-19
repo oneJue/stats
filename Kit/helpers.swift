@@ -1484,12 +1484,12 @@ public class SMCHelper {
                 lock.unlock()
 
                 DispatchQueue.main.async {
+                    self.connection?.invalidationHandler = nil
                     SMAppService.daemon(plistName: self.plistName).unregister { error in
                         DispatchQueue.main.async {
                             if let error {
                                 print("failed to unregister SMC helper daemon: \(error.localizedDescription)")
                             }
-                            self.connection?.invalidationHandler = nil
                             self.connection?.invalidate()
                             self.connection = nil
                             if !silent {
