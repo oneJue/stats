@@ -32,7 +32,7 @@ public class SystemStats {
     static public var appHost = URL(string: "https://app.system-stats.com")!
     
     public var monitoring: Bool {
-        get { Store.shared.bool(key: "remote_monitoring", defaultValue: false) }
+        get { Store.shared.bool(key: "remote_monitoring", defaultValue: true) }
         set {
             Store.shared.set(key: "remote_monitoring", value: newValue)
             if newValue {
@@ -909,7 +909,7 @@ class MQTTManager: NSObject {
             guard !self.isConnected && !self.isConnecting else { return }
             self.isConnecting = true
             
-            SystemStats.shared.auth.isAuthorized { [weak self] status in
+            SystemStats.shared.auth.isAuthorized { [weak self = self] status in
                 guard let self else { return }
                 
                 self.onStateQueue {
