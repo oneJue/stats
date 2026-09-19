@@ -14,45 +14,56 @@ import RAM
 
 class RAM: XCTestCase {
     func testProcessReader_parseProcess() throws {
-        var process = ProcessReader.parseProcess("3127  lldb-rpc-server  611M")
+        // Fixture PIDs must not resolve to unrelated applications on the test machine.
+        let applicationName: (pid_t) -> String? = { _ in nil }
+        var process = ProcessReader.parseProcess("3127  lldb-rpc-server  611M", applicationName: applicationName)
         XCTAssertEqual(process.pid, 3127)
         XCTAssertEqual(process.name, "lldb-rpc-server")
         XCTAssertEqual(process.usage, 611 * Double(1000 * 1000))
         
-        process = ProcessReader.parseProcess("257   WindowServer     210M")
+        process = ProcessReader.parseProcess("257   WindowServer     210M", applicationName: applicationName)
         XCTAssertEqual(process.pid, 257)
         XCTAssertEqual(process.name, "WindowServer")
         XCTAssertEqual(process.usage, 210 * Double(1000 * 1000))
         
-        process = ProcessReader.parseProcess("7752  phpstorm         1819M")
+        process = ProcessReader.parseProcess("7752  phpstorm         1819M", applicationName: applicationName)
         XCTAssertEqual(process.pid, 7752)
         XCTAssertEqual(process.name, "phpstorm")
         XCTAssertEqual(process.usage, 1819.0 / 1024 * 1000 * Double(1000 * 1000))
         
-        process = ProcessReader.parseProcess("359   NotificationCent 62M")
+        process = ProcessReader.parseProcess("359   NotificationCent 62M", applicationName: applicationName)
         XCTAssertEqual(process.pid, 359)
         XCTAssertEqual(process.name, "NotificationCent")
         XCTAssertEqual(process.usage, 62 * Double(1000 * 1000))
         
-        process = ProcessReader.parseProcess("623    SafariCloudHisto 1608K")
+        process = ProcessReader.parseProcess("623    SafariCloudHisto 1608K", applicationName: applicationName)
         XCTAssertEqual(process.pid, 623)
         XCTAssertEqual(process.name, "SafariCloudHisto")
         XCTAssertEqual(process.usage, (1608/1024) * Double(1000 * 1000))
         
-        process = ProcessReader.parseProcess("174    WindowServer     1442M+ ")
+        process = ProcessReader.parseProcess("174    WindowServer     1442M+ ", applicationName: applicationName)
         XCTAssertEqual(process.pid, 174)
         XCTAssertEqual(process.name, "WindowServer")
         XCTAssertEqual(process.usage, 1442 * Double(1000 * 1000))
         
-        process = ProcessReader.parseProcess("329    Finder           488M+ ")
+        process = ProcessReader.parseProcess("329    Finder           488M+ ", applicationName: applicationName)
         XCTAssertEqual(process.pid, 329)
         XCTAssertEqual(process.name, "Finder")
         XCTAssertEqual(process.usage, 488 * Double(1000 * 1000))
         
-        process = ProcessReader.parseProcess("7163* AutoCAD LT 2023  11G  ")
+        process = ProcessReader.parseProcess("7163* AutoCAD LT 2023  11G  ", applicationName: applicationName)
         XCTAssertEqual(process.pid, 7163)
         XCTAssertEqual(process.name, "AutoCAD LT 2023")
         XCTAssertEqual(process.usage, 11 * Double(1024 * 1000 * 1000))
+    }
+
+    func testProcessReader_applicationName() throws {
+        let process = ProcessReader.parseProcess("359   NotificationCent 62M") { pid in
+            XCTAssertEqual(pid, 359)
+            return "Notification Center"
+        }
+        XCTAssertEqual(process.name, "Notification Center")
+        XCTAssertEqual(process.usage, 62 * Double(1000 * 1000))
     }
     
     func testKernelTask() throws {

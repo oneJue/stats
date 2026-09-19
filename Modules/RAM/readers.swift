@@ -225,7 +225,10 @@ public class ProcessReader: Reader<[TopProcess]> {
         return Int(responsiblePid)
     }
     
-    static public func parseProcess(_ raw: String) -> TopProcess {
+    static public func parseProcess(
+        _ raw: String,
+        applicationName: (pid_t) -> String? = { NSRunningApplication(processIdentifier: $0)?.localizedName }
+    ) -> TopProcess {
         var str = raw.trimmingCharacters(in: .whitespaces)
         let pidString = str.find(pattern: "^\\d+")
         
@@ -264,7 +267,7 @@ public class ProcessReader: Reader<[TopProcess]> {
         }
         
         var name: String = command
-        if let app = NSRunningApplication(processIdentifier: pid_t(pid)), let n = app.localizedName {
+        if let n = applicationName(pid_t(pid)) {
             name = n
         }
         
