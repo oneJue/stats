@@ -732,7 +732,7 @@ public func isNewestVersion(currentVersion: String, latestVersion: String) -> Bo
             return true
         }
         
-        if latest.patch >= current.patch && latest.minor >= current.minor && latest.major >= current.major {
+        if latest.patch > current.patch && latest.minor >= current.minor && latest.major >= current.major {
             return true
         }
         

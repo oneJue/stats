@@ -8,6 +8,7 @@ This release preserves the custom **Keep screen awake** and **Prevent sleep on l
 - Include the GPU text widget, newer platform sensors, and updated translations.
 - Restore the original sleep setting before helper replacement and wait for unregistration to finish before reinstalling it.
 - Check for future releases in `oneJue/stats`, preserving the custom functionality.
+- Do not offer identical or older beta builds as updates.
 
 The installer supports Apple Silicon and Intel Macs running macOS 12 or newer. On macOS 26, enable Stats in System Settings > Menu Bar if its icons are hidden. Lid sleep prevention requires approval of the Stats background helper under System Settings > General > Login Items & Extensions.
 
