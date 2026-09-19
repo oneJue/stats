@@ -1,0 +1,130 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version matching MARKETING_VERSION (without v)
+        required: true
+        default: '3.1.0'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      RELEASE_VERSION: ${{ inputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check version and signing configuration
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          declared=$(/usr/libexec/PlistBuddy -c 'Print :objects:9A141107229E721200D29793:buildSettings:MARKETING_VERSION' Stats.xcodeproj/project.pbxproj)
+          [[ "$RELEASE_VERSION" == "$declared" ]]
+          for name in CERTIFICATE CERTIFICATE_PASSWORD SIGNING_IDENTITY TEAM_ID APPLE_ID APPLE_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing signing configuration: $name. See RELEASING.md."
+              exit 1
+            fi
+          done
+      - name: Test
+        run: >-
+          xcodebuild test -scheme Stats -destination 'platform=macOS'
+          -configuration Debug -derivedDataPath build/tests
+          -resultBundlePath build/TestResults.xcresult
+          CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
+      - name: Import signing identity
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          umask 077
+          keychain="$RUNNER_TEMP/stats-signing.keychain-db"
+          password=$(openssl rand -hex 24)
+          echo "::add-mask::$password"
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/stats-signing.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/stats-signing.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.keychain-db"
+      - name: Archive signed universal app
+        env:
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+        run: |
+          xcodebuild archive -scheme Stats -destination 'generic/platform=macOS' \
+            -configuration Release -archivePath build/Stats.xcarchive \
+            ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" DEVELOPMENT_TEAM="$TEAM_ID" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $RUNNER_TEMP/stats-signing.keychain-db"
+          ditto build/Stats.xcarchive/Products/Applications/Stats.app build/Stats.app
+          make verify
+          codesign --verify --deep --strict --verbose=2 build/Stats.app
+          lipo -verify_arch arm64 x86_64 build/Stats.app/Contents/MacOS/Stats
+          ditto -c -k --sequesterRsrc --keepParent build/Stats.app build/Stats.zip
+      - name: Notarize app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+        run: |
+          xcrun notarytool submit build/Stats.zip --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" --team-id "$TEAM_ID" --wait
+          xcrun stapler staple build/Stats.app
+          spctl --assess --type execute --verbose=2 build/Stats.app
+      - name: Create and notarize installer
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          mkdir -p build/dmg
+          ditto build/Stats.app build/dmg/Stats.app
+          ln -s /Applications build/dmg/Applications
+          hdiutil create -volname Stats -srcfolder build/dmg -format UDZO build/Stats.dmg
+          codesign --sign "$SIGNING_IDENTITY" --timestamp build/Stats.dmg
+          xcrun notarytool submit build/Stats.dmg --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" --team-id "$TEAM_ID" --wait
+          xcrun stapler staple build/Stats.dmg
+          (cd build && shasum -a 256 Stats.dmg > SHA256SUMS.txt)
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v$RELEASE_VERSION" --target "$GITHUB_SHA" \
+            --title "Stats $RELEASE_VERSION (oneJue custom)" \
+            --notes-file RELEASE_NOTES.md build/Stats.dmg build/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-test-results
+          path: build/TestResults.xcresult
+          if-no-files-found: ignore
+      - name: Remove signing material
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/stats-signing.keychain-db" ]]; then
+            security delete-keychain "$RUNNER_TEMP/stats-signing.keychain-db"
+          fi
+          rm -f "$RUNNER_TEMP/stats-signing.p12"
